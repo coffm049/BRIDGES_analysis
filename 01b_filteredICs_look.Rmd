@@ -1,0 +1,39 @@
+---
+title: "01b_filteredIC_look"
+author: "Christian Coffman"
+date: '2022-05-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(fslr)
+```
+
+```{r cars}
+ICs <- read.csv("../thresh50/dFNC_labels.csv")
+ic_files <- data.frame(files = list.files("../SMs")) %>%
+  mutate(num = parse_number(files)) %>%
+  filter(num %in% ICs$IC)
+
+```
+
+
+```{r}
+reffile = '/home/christian/Research/Brain_stuff/Atlases/MNI152.nii.gz'
+
+for (i in ic_files$files) {
+  filepath <- paste0("../SMs/", i)
+  ortho2(reffile, filepath)
+}
+```
+
+
+```{r}
+flirt(infile = IC_SMlist[[1]], reffile = reffile, reorient = T,
+                outfile = '../SMs/test.nii.gz')
+
+
+```
+
+

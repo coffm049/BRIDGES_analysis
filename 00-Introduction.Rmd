@@ -1,0 +1,60 @@
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, include = TRUE)
+library(fslr)
+library(tidyverse)
+```
+
+# Image preprocessing + GIFT outline      
+- HCP4 pipeline   
+- Voxel-wise Variance Normalization  
+- Group/Individual level PCA's  
+- Group level ICA  
+- Group information guided ICA   
+- Sliding windows correlation and clustering to find "states"  
+
+## GIFT IC's 
+```{r include =TRUE, fig.show="hold", out.width="49%",out.height="30%"}
+wd <- "/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/"
+
+all_powerspec <- read_delim(paste0(wd, 'timecourses//powersepctra.csv'), delim = ",")
+
+reffile = '/home/christian/Research/Brain_stuff/Atlases/MNI152.nii.gz'
+atlas_file = '/home/christian/Research/Brain_stuff/Atlases/Yeo_17_2mm_mni152.nii.gz'
+
+ortho2(reffile, crosshairs = FALSE, text = "Whole brain (MNI152)")
+
+# list of files to investigate
+timecourse.files <-list.files(paste0(wd, 'timecourses'),full.names = TRUE)
+
+timecourses1 <- as.data.frame(readNIfTI(timecourse.files[[18]]))
+timecourses2 <- as.data.frame(readNIfTI(timecourse.files[[25]]))
+
+SM <- readNIfTI("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/SMs/IC_1.nii.gz")
+
+ortho2(reffile, fslmaths(SM, opts ='-abs -thrP 50 -bin'), crosshairs = FALSE, text= "IC1 ('SomMotor B') \n over MNI 152")
+
+timecourse1 <- timecourses1$V1
+timecourse2 <- timecourses2$V1
+
+data.frame(time = 1:912, `1` = timecourse1, `2` = timecourse2) %>%
+  pivot_longer(-time, names_to = "Subject", values_to = "Signal") %>%
+  mutate(Subject = factor(sub(".", "", Subject))) %>%
+  ggplot(aes(x = time, y = Signal, col = Subject)) +
+  geom_line() + 
+  xlim(250, 500) +
+  ggtitle("IC 1 timecourses for 2 subjects") +
+  theme(plot.title = element_text(size = 30, face = "bold"), axis.title = element_text(size = 35))
+
+all_powerspec %>%
+  filter(IC == "V1") %>%
+  ggplot(aes(x= Hz, y = power, col = factor(subject), alpha = 0.3)) +
+  geom_line() +
+  theme(legend.position = "none") +
+  xlab("Freq (Hz)")+
+  ylab("Power") +
+  ggtitle("Powerspectra of IC1 for \n all subjects") +
+  theme(plot.title = element_text(size = 30, face = "bold"), axis.title = element_text(size = 35))
+```
+
+

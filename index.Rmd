@@ -1,0 +1,35 @@
+---
+title: "BRIDGES: Association between fMRI dynamics and Self Harm" 
+author: "Christian Coffman"
+date: |
+  `r format(Sys.time(), '%d %B, %Y')`
+  \newline \newline \newline ![](/home/christian/Documents/University_of_Minnesota.png){width=1.5in}
+
+institute: University of Minnesota Twin Cities \newline
+           Division of Biostatisticss
+output:
+  bookdown::pdf_book:
+    base_format: "function(..., number_sections) rmarkdown::beamer_presentation(...)"
+    number_sections: false
+    theme: "Antibes"
+    slide_level: 3
+    toc: true
+    fonttheme: "structurebold"
+bibliography: /home/christian/Documents/library.bib
+csl: /home/christian/Documents/american-statistical-association.csl
+header-includes: 
+- \definecolor{Gold}{RGB}{255, 204, 51}
+- \definecolor{Maroon1}{RGB}{112, 0, 25}
+- \definecolor{Maroon2}{RGB}{92, 0, 15}
+- \definecolor{Maroon3}{RGB}{92, 0, 15}
+- \definecolor{Maroon4}{RGB}{82, 0, 10}
+- \setbeamercolor{palette primary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette sidebar tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette sidebar quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{item}{fg = Maroon1}
+---

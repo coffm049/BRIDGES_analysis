@@ -1,0 +1,288 @@
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = NA, message = FALSE, results = 'hide', warning= FALSE, echo = FALSE, include= TRUE, fig.height = 4, fig.width = 6, cache = FALSE)
+library(tidyverse)
+library(broom)
+library(broom.mixed)
+library(ramify)
+library(MASS)
+library(kableExtra)
+library(lme4)
+library(compiler)
+require(parallel)
+require(boot)
+library(mice)
+library(miceadds)
+library(SuppDists)
+```
+
+
+###   
+
+```{r include = FALSE}
+# get grid for each subject
+subjects <- read_delim('/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/files.txt', delim = "\n", col_names = FALSE)
+subjects <- as.data.frame(str_split(subjects$X1, "/", simplify = TRUE))$V6
+subjects <- str_split(subjects, "-", simplify = TRUE)[,2]
+
+#############################
+#Extracting state trajectories
+# readMat(filename)
+# state_traj <- as.data.framte(df$clusterInfo[[8]][1:103,1,1:882])
+# change_states <- df$meta.states.info[[1]][[6]][[2]]
+
+
+# for 7 states
+state_data <- read.csv('/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/states.csv')
+
+# add grid names and time
+colnames(state_data) <- append("time", subjects)
+
+
+state_data <- state_data %>%
+  pivot_longer(cols = -time, values_to = "State", names_to = "grid") %>%
+  arrange(grid, time) %>%
+  mutate(grid = factor(grid))
+
+# Checking which ANT data
+ANT <- list.files("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/ANT_New/Year 1/")
+ANT <- as.data.frame(str_split(ANT, "-", simplify = TRUE))$V2
+ANT <- factor(as.numeric(ANT))
+yes <- subjects[subjects %in% ANT]
+
+# write.csv(yes, "/home/christian/Desktop/Have_ANT.csv")
+# write.csv(not, "/home/christian/Desktop/Nothave_ANT.csv")
+ 
+# Load subject data
+age_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/switching_data.csv") 
+subj_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/complete bridges y1.csv") 
+#subj_df$birthday <- as.Date(subj_df$birthday, format = "%m/%d/%Y")
+#subj_df$scan_date <- as.Date(subj_df$scan_date, format = "%m/%d/%Y")
+#subj_df$age <- (subj_df$scan_date - subj_df$birthday)/365
+
+subj_df <- age_df %>% 
+  dplyr::select(grid, age) %>%
+  inner_join(subj_df, by = "grid") %>%
+  dplyr::select(grid, Lifetime.NSSI.Group, age, BDI, BSSI, nssi_engagement, sitbi_nssie_lifetime_freq, log_nssi_total)
+
+subj_df$nssi_engagement[is.na(subj_df$nssi_engagement)] <- 0
+# subj_df$lifetime_nssie[subj_df$lifetime_nssie == -Inf] <- 0
+subj_df$Mod_Severe <- subj_df$Lifetime.NSSI.Group %in% c("Moderate NSSI", "Severe NSSI")
+
+subj_df$NSSI_grouped <- subj_df$Lifetime.NSSI.Group
+subj_df$NSSI_grouped[subj_df$Lifetime.NSSI.Group == "Mild NSSI"] <- "No NSSI"
+subj_df$NSSI_grouped <- factor(subj_df$NSSI_grouped)
+
+# subj_df$lifetime_number_attempts <- as.character(subj_df$lifetime_number_attempts)
+# subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "4-Mar"] <- 4.5
+# subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "15-Oct"] <- 12.5
+# subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "3 or 4"] <- 3.5
+# subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "1-Mar"] <- 2
+# subj_df$lifetime_number_attempts <- as.numeric(subj_df$lifetime_number_attempts)
+# subj_df$lifetime_number_attempts[is.na(subj_df$lifetime_number_attempts)] <- 0
+
+# subj_df$last_attempt_days_ago <- as.character(subj_df$last_attempt_days_ago)
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "1 year"] <- 365
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "100 days ago"] <- 100
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "2 weeks"] <- 14
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "120?"] <- 120
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "210 days"] <- 210
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "Years"] <- 1000
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "Time unknown"] <- 1000
+# subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "Time unknown"] <- 1000
+# subj_df$last_attempt_days_ago <- as.numeric(subj_df$last_attempt_days_ago)
+
+
+
+# subj_df$past_year_attempts[subj_df$past_year_attempts == ">3"] <- 4
+# subj_df$past_year_attempts[subj_df$past_year_attempts == "1-Mar"] <- 2
+# 
+# subj_df$sitbi_nssie_lastyear_freq[is.na(subj_df$sitbi_nssie_lastyear_freq)] <- 0
+# subj_df$sitbi_nssie_lifetime_freq[is.na(subj_df$sitbi_nssie_lifetime_freq)] <- 0
+
+
+
+subj_df <- subj_df %>% 
+  mutate(grid = factor(grid), 
+         Lifetime.NSSI.Group = factor(Lifetime.NSSI.Group, order = TRUE, levels = c("No NSSI", "Mild NSSI", "Moderate NSSI", "Severe NSSI"))) %>% 
+  filter(grid %in% subjects)
+
+```
+
+
+
+
+
+
+
+```{Rcpp include = FALSE}
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+
+DataFrame nth_state(IntegerVector timecourse) {
+  int tps = timecourse.size() ;
+
+  NumericVector state(tps) ;
+  NumericVector dwell(tps) ;
+
+  // initialize temporary state and time counter.
+  int current_state = timecourse[0];
+  int current_dwell =0;
+  int state_num = 0;
+
+  // Loop over all time points and check dwell time against state_dwell
+  for (int i =0; i < tps; i++) {
+    
+    // Check if nth state is same as n-1 state and increment dwell time by 1 if its the same
+    if (timecourse[i] == current_state) {
+      ++current_dwell ;
+    }
+    else  {
+      // store the previous dwell into the output vector
+      
+      state[state_num] = current_state ;
+      dwell[state_num] = current_dwell ;
+      
+      //update state number and current state
+      ++state_num ;
+      current_state = timecourse[i] ;
+      
+      //reset dwell time
+      current_dwell =1 ;
+    }
+    // add last state
+    state[state_num] = current_state ;
+    dwell[state_num] = current_dwell ;
+  }
+  DataFrame dfdwell = DataFrame::create(Named("State") = state, Named("Dwell time") = dwell);
+  return dfdwell ;
+}
+
+```
+
+```{r include = TRUE, out.height='50%'}
+dwell_data <- state_data %>%
+  arrange(grid, time) %>%
+  nest(data = -grid) %>%
+  mutate(dwellings = map(data, ~ nth_state(.$State))) %>%
+  unnest(dwellings) %>%
+  dplyr::select(grid, State, Dwell.time) %>%
+  mutate(State= factor(State)) %>%
+  left_join(subj_df, by = "grid") %>%
+  filter(Dwell.time !=0) %>%
+  mutate(State = factor(State))
+
+total_dwell <- dwell_data %>%
+  group_by(grid, State, Lifetime.NSSI.Group) %>%
+  summarize(frac_time = sum(Dwell.time)/882)
+
+# Visualzie proportional occupancy
+total_dwell %>%
+  left_join(subj_df, by = "grid") %>%
+  ggplot(aes(x= frac_time, col = Mod_Severe)) +
+  geom_density() +
+  facet_wrap(~State) +
+  scale_x_log10()
+
+total_dwell %>%
+  left_join(subj_df, by = "grid") %>%
+  ggplot(aes(x= BSSI, y= frac_time)) +
+  geom_density2d() +
+  facet_wrap(~State)
+
+mutli_data <- total_dwell %>%
+  left_join(subj_df, by = "grid") 
+
+mutli_data <- mutli_data %>%
+  pivot_wider(names_from = State, values_from = frac_time)
+library(nnet)
+
+multi_mod <- multinom(cbind(`1`, `2`, `3`, `4`, `5`,`6`,`7`) ~ BSSI + age, data = mutli_data)
+z <- summary(multi_mod)$coefficients/summary(multi_mod)$standard.errors
+p <- (1 - pnorm(abs(z), 0, 1)) * 2
+# total_dwell %>%
+#   group_by(State) %>%
+#   summarize(med = median(frac_time), IQ = IQR(frac_time))
+
+state_switch_data <- dwell_data %>%
+  group_by(grid) %>%
+  dplyr::summarize("Switches" = dplyr::n()) %>%
+  left_join(subj_df, by = "grid") %>%
+  mutate(Freq = Switches /882)
+
+combod <- state_switch_data
+```    
+  
+```{r inlcude = FALSE}
+# ants <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/ANT/Processing-ANT-Data/ANT_results.csv")%>% 
+#   filter(year == 1, Third == 0) %>%
+#   mutate(grid = factor(subject))
+# combod <- left_join(state_switch_data, ants, by = "grid")
+# 
+# combod <- combod %>%
+#   mutate(Alert = (Alert - min(Alert, na.rm = TRUE))/sd(Alert, na.rm = TRUE),
+#          Orient = (Orient - min(Orient, na.rm = TRUE))/sd(Orient, na.rm = TRUE),
+#          Conflict = (Conflict - min(Conflict, na.rm = TRUE))/sd(Conflict, na.rm = TRUE)) %>% 
+#   mutate(aves = Alert + Orient + Conflict)
+
+# combod %>% 
+#   ggplot(aes(x= aves, y = Freq)) +
+#   geom_point() +
+#   geom_smooth()
+
+# something <- combod %>%
+#   dplyr::select(Freq, Alert, Orient, Conflict, age, Psychotropic_med, BDI) %>%
+#   complete.cases()
+# sum(something)
+
+# summary(lm(Freq ~ Conflict + age + BDI, data= combod))
+# combod %>%
+#   ggplot(aes(x = BSSI, y= Freq)) +
+#   geom_point() +
+#   geom_smooth()
+
+### Looking at what might cause the skew 
+# x = linspace(4,10, 100)
+# invgaus <- dinvGauss(x, nu = 1, lambda = 1)
+# gam <- dgamma(x, shape = 1, rate = 1, scale  = 1)
+# {plot(x, invgaus, type = "l")
+# lines(x, gam, col= "red")
+# legend(x= 2.5,  y = 0.8, legend = "red: exponential \n black: gamma")}
+```
+
+# Selecting variables   
+Here I:  
+- selected a short list of varaibles to choose from ("few_vars")  
+- Subsetted complete cases ("complete_df") for variable selection ("select_df") using stepAIC    
+- Combined incomplete cases with unselected complete cases for inference ("inf_df")
+- roughtly 25/75 split for selection and inference  
+The selected varaibles are...  
+[1] "(Intercept)" "Alert" "Conflict" "age" "BSSI"                 
+[6] "ADHDTRUE" "Lifetime.NSSI.Group.L" "Lifetime.NSSI.Group.Q"
+```{r}
+set.seed(1234)
+few_vars <- combod %>% 
+  dplyr::select(-Switches) #%>% dplyr::select(grid, Freq, age, Psychotropic_med, BDI, BSSI, Mod_Severe, Lifetime.NSSI.Group, lifetime_nssie)
+complete_df <- few_vars[complete.cases(few_vars) ,]
+complete_df$age <- as.numeric(complete_df$age)
+
+
+# split into dataframes for selection and inference
+sel.ind <- sample(c(1:126), 32, replace= F)
+select_df <- complete_df[sel.ind, ]
+sel.grid <- select_df$grid
+inf_df <- complete_df[-sel.ind,]
+inf_df <- rbind(inf_df ,  
+                few_vars[!complete.cases(few_vars) ,])
+inf.grid <- inf_df$grid
+inf_df <- inf_df %>% dplyr::select(-grid)
+select_df <- select_df %>% dplyr::select(-grid)
+
+select_lm <- lm(Freq~ ., data= select_df)
+best_freq <- stepAIC(select_lm, direction = "both", 
+                      trace = 0, k = log(4), scope = list(upper = ~ ., lower = ~ age  ))
+print(names(best_freq$coefficients))
+# saveRDS(select_df, "/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Regressions/Selection_dataframe.rds")
+```
+

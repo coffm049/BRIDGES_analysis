@@ -1,0 +1,500 @@
+---
+title: BRIDGES variable selection
+author: "Christian Coffman"
+institute: University of Minnesota Twin Cities \newline
+           Division of Biostatisticss
+date: |
+      June, 15 2021 \newline \newline \newline 
+      ![](/home/christian/Documents/University_of_Minnesota.png){width=1.5in}
+output:
+  beamer_presentation:
+    theme: "Antibes"
+    slide_level: 3
+    toc: true
+    fonttheme: "structurebold"
+bibliography: /home/christian/Documents/library.bib
+csl: /home/christian/Documents/american-statistical-association.csl
+header-includes: 
+- \definecolor{Gold}{RGB}{255, 204, 51}
+- \definecolor{Maroon1}{RGB}{112, 0, 25}
+- \definecolor{Maroon2}{RGB}{92, 0, 15}
+- \definecolor{Maroon3}{RGB}{92, 0, 15}
+- \definecolor{Maroon4}{RGB}{82, 0, 10}
+- \setbeamercolor{palette primary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette sidebar tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette sidebar quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{item}{fg = Maroon1}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(comment = NA, message = FALSE, results = 'hide', warning= FALSE, echo = FALSE, include= FALSE, fig.height = 4, fig.width = 6, cache = TRUE)
+library(leaps)
+library(fslr)
+library(tidyverse)
+library(broom)
+library(broom.mixed)
+library(ramify)
+library(MASS)
+library(kableExtra)
+library(naniar)
+library(R.matlab)
+library(GGally)
+library(lme4)
+library(compiler)
+require(parallel)
+require(boot)
+require(lattice)
+library(reshape2)
+library(nnet)
+library(sjPlot)
+library(equatiomatic)
+library(grid)
+library(gridExtra)
+library(mice)
+library(miceadds)
+library(selectiveInference)
+
+```
+
+
+<!-- To Do: -->
+<!-- 1) Residual analysis -->
+<!-- 2) qqplots -->
+<!-- 3) mice plots to check stability of imputations -->
+<!-- 4)  -->
+
+<!-- # sections -->
+<!-- ## subsection -->
+<!--  ### slide -->
+
+```{r load, include = FALSE}
+# get grid for each subject
+subjects <- read_delim('/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/files.txt', delim = "\n", col_names = FALSE)
+subjects <- as.data.frame(str_split(subjects$X1, "/", simplify = TRUE))$V6
+subjects <- str_split(subjects, "-", simplify = TRUE)[,2]
+
+#############################
+#Extracting state trajectories
+# readMat(filename)
+# state_traj <- as.data.framte(df$clusterInfo[[8]][1:103,1,1:882])
+# change_states <- df$meta.states.info[[1]][[6]][[2]]
+
+
+# for 7 states
+state_data <- read.csv('/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/states.csv')
+
+# add grid names and time
+colnames(state_data) <- append("time", subjects)
+
+
+state_data <- state_data %>%
+  pivot_longer(cols = -time, values_to = "State", names_to = "grid") %>%
+  arrange(grid, time) %>%
+  mutate(grid = factor(grid))
+
+# Checking which ANT data
+ANT <- list.files("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/ANT_New/Year 1/")
+ANT <- as.data.frame(str_split(ANT, "-", simplify = TRUE))$V2
+ANT <- factor(as.numeric(ANT))
+yes <- subjects[subjects %in% ANT]
+
+# write.csv(yes, "/home/christian/Desktop/Have_ANT.csv")
+# write.csv(not, "/home/christian/Desktop/Nothave_ANT.csv")
+ 
+# Load subject data
+subj_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/complete bridges y1.csv") 
+subj_df$birthday <- as.Date(subj_df$birthday, format = "%m/%d/%Y")
+subj_df$scan_date <- as.Date(subj_df$scan_date, format = "%m/%d/%Y")
+subj_df$age <- (subj_df$scan_date - subj_df$birthday)/365
+subj_df <- subj_df %>% 
+  dplyr::select(grid, Lifetime.NSSI.Group, age, Age_intake, Psychotropic_med, BDI, BSSI, last_attempt_days_ago, lifetime_number_attempts, past_year_attempts, past_month_attempts, past_week_attempts, nssi_engagement, lifetime_nssie, year_nssie, month_nssie, week_nssie, sitbi_nssie_lifetime_freq, sitbi_nssie_lastyear_freq,
+                ADHD )
+
+subj_df$nssi_engagement[is.na(subj_df$nssi_engagement)] <- 0
+subj_df$lifetime_nssie[subj_df$lifetime_nssie == -Inf] <- 0
+subj_df$Mod_Severe <- subj_df$Lifetime.NSSI.Group %in% c("Moderate NSSI", "Severe NSSI")
+
+subj_df$NSSI_grouped <- subj_df$Lifetime.NSSI.Group
+subj_df$NSSI_grouped[subj_df$Lifetime.NSSI.Group == "Mild NSSI"] <- "No NSSI"
+subj_df$NSSI_grouped <- factor(subj_df$NSSI_grouped)
+
+subj_df$lifetime_number_attempts <- as.character(subj_df$lifetime_number_attempts)
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "4-Mar"] <- 4.5
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "15-Oct"] <- 12.5
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "3 or 4"] <- 3.5
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "1-Mar"] <- 2
+subj_df$lifetime_number_attempts <- as.numeric(subj_df$lifetime_number_attempts)
+subj_df$lifetime_number_attempts[is.na(subj_df$lifetime_number_attempts)] <- 0
+
+subj_df$last_attempt_days_ago <- as.character(subj_df$last_attempt_days_ago)
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "1 year"] <- 365
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "100 days ago"] <- 100
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "2 weeks"] <- 14
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "120?"] <- 120
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "210 days"] <- 210
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "Years"] <- 1000
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "Time unknown"] <- 1000
+subj_df$last_attempt_days_ago[subj_df$last_attempt_days_ago == "Time unknown"] <- 1000
+subj_df$last_attempt_days_ago <- as.numeric(subj_df$last_attempt_days_ago)
+
+
+
+subj_df$past_year_attempts[subj_df$past_year_attempts == ">3"] <- 4
+subj_df$past_year_attempts[subj_df$past_year_attempts == "1-Mar"] <- 2
+
+subj_df$sitbi_nssie_lastyear_freq[is.na(subj_df$sitbi_nssie_lastyear_freq)] <- 0
+subj_df$sitbi_nssie_lifetime_freq[is.na(subj_df$sitbi_nssie_lifetime_freq)] <- 0
+
+
+
+subj_df <- subj_df %>% 
+  mutate(grid = factor(grid), 
+         Lifetime.NSSI.Group = factor(Lifetime.NSSI.Group, order = TRUE, levels = c("No NSSI", "Mild NSSI", "Moderate NSSI", "Severe NSSI")),
+         Psychotropic_med = as.logical(Psychotropic_med),
+         nssi_engagement = as.logical(nssi_engagement),
+         lifetime_number_attempts = as.numeric(lifetime_number_attempts),
+         last_attempt_days_ago = as.numeric(last_attempt_days_ago),
+         past_year_attempts = as.numeric(past_year_attempts),
+         lifetime_nssie = log(lifetime_nssie + 1),
+         nssi_engagement = as.logical(nssi_engagement),
+
+         ADHD = as.logical(as.numeric(ADHD))) %>%
+  filter(grid %in% subjects)
+
+
+```
+
+
+
+
+
+
+<!-- # Modeling State switching frequency -->
+
+```{Rcpp include = FALSE}
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+
+DataFrame nth_state(IntegerVector timecourse) {
+  int tps = timecourse.size() ;
+
+  NumericVector state(tps) ;
+  NumericVector dwell(tps) ;
+
+  // initialize temporary state and time counter.
+  int current_state = timecourse[0];
+  int current_dwell =0;
+  int state_num = 0;
+
+  // Loop over all time points and check dwell time against state_dwell
+  for (int i =0; i < tps; i++) {
+    
+    // Check if nth state is same as n-1 state and increment dwell time by 1 if its the same
+    if (timecourse[i] == current_state) {
+      ++current_dwell ;
+    }
+    else  {
+      // store the previous dwell into the output vector
+      
+      state[state_num] = current_state ;
+      dwell[state_num] = current_dwell ;
+      
+      //update state number and current state
+      ++state_num ;
+      current_state = timecourse[i] ;
+      
+      //reset dwell time
+      current_dwell =1 ;
+    }
+    // add last state
+    state[state_num] = current_state ;
+    dwell[state_num] = current_dwell ;
+  }
+  DataFrame dfdwell = DataFrame::create(Named("State") = state, Named("Dwell time") = dwell);
+  return dfdwell ;
+}
+
+```
+
+## Visualizing Proportional occupancy
+```{r include = TRUE, out.height='50%'}
+dwell_data <- state_data %>%
+  arrange(grid, time) %>%
+  nest(data = -grid) %>%
+  mutate(dwellings = map(data, ~ nth_state(.$State))) %>%
+  unnest(dwellings) %>%
+  dplyr::select(grid, State, Dwell.time) %>%
+  mutate(State= factor(State)) %>%
+  left_join(subj_df, by = "grid") %>%
+  filter(Dwell.time !=0) %>%
+  mutate(State = factor(State))
+
+total_dwell <- dwell_data %>%
+  group_by(grid, State, Lifetime.NSSI.Group) %>%
+  summarize(frac_time = sum(Dwell.time)/882)
+
+# Visualzie proportional occupancy
+total_dwell %>% 
+  ggplot(aes(x= frac_time, col = Lifetime.NSSI.Group)) +
+  geom_density() +
+  facet_wrap(~State) +
+  scale_x_log10()
+
+# total_dwell %>%
+#   group_by(State) %>%
+#   summarize(med = median(frac_time), IQ = IQR(frac_time))
+
+state_switch_data <- dwell_data %>%
+  group_by(grid) %>%
+  summarize("Switches" = n()) %>%
+  left_join(subj_df, by = "grid") %>%
+  mutate(Freq = Switches /882)
+
+```
+There doens't appear to be any relation between NSSI groups and any state
+
+<!-- include ANTS data -->
+```{r inlcude = FALSE}
+ants <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/ANT/Processing-ANT-Data/ANT_results.csv")%>% 
+  filter(year == 1, Third == 0) %>%
+  mutate(grid = factor(subject))
+combod <- left_join(state_switch_data, ants, by = "grid")
+
+combod <- combod %>%
+  mutate(Alert = (Alert - min(Alert, na.rm = TRUE))/sd(Alert, na.rm = TRUE),
+         Orient = (Orient - min(Orient, na.rm = TRUE))/sd(Orient, na.rm = TRUE),
+         Conflict = (Conflict - min(Conflict, na.rm = TRUE))/sd(Conflict, na.rm = TRUE)) %>% 
+  mutate(aves = Alert + Orient + Conflict)
+
+# combod %>% 
+#   ggplot(aes(x= aves, y = Freq)) +
+#   geom_point() +
+#   geom_smooth()
+
+# something <- combod %>%
+#   dplyr::select(Freq, Alert, Orient, Conflict, age, Psychotropic_med, BDI) %>%
+#   complete.cases()
+# sum(something)
+
+# summary(lm(Freq ~ Conflict + age + BDI, data= combod))
+combod %>%
+  ggplot(aes(x = BSSI, y= Freq)) +
+  geom_point() +
+  geom_smooth()
+
+### Looking at what might cause the skew 
+# x = linspace(4,10, 100)
+# invgaus <- dinvGauss(x, nu = 1, lambda = 1)
+# gam <- dgamma(x, shape = 1, rate = 1, scale  = 1)
+# {plot(x, invgaus, type = "l")
+# lines(x, gam, col= "red")
+# legend(x= 2.5,  y = 0.8, legend = "red: exponential \n black: gamma")}
+
+# combod %>%
+#   dplyr::select(grid, Lifetime.NSSI.Group, age, Psychotropic_med, BSSI, BDI, ADHD, Alert, Conflict) %>%
+#   write.csv("Select_subject_data.csv")
+```
+
+# Selecting variables   
+Here I:  
+- selected a short list of varaibles to choose from ("few_vars")  
+- Subsetted complete cases ("complete_df") for variable selection ("select_df") using stepAIC    
+- Combined incomplete cases with unselected complete cases for inference ("inf_df")
+- roughtly 25/75 split for selection and inference  
+The selected varaibles are...  
+```{r include = TRUE, results = TRUE}
+set.seed(1234)
+few_vars <- combod %>%
+  dplyr::select(grid, Freq, Alert, Orient, Conflict, age, Psychotropic_med, BDI, BSSI, ADHD, Mod_Severe, Lifetime.NSSI.Group)
+complete_df <- few_vars[complete.cases(few_vars) ,]
+complete_df$age <- as.numeric(complete_df$age)
+
+
+# split into dataframes for selection and inference
+sel.ind <- sample(c(1:126), 32, replace= F)
+select_df <- complete_df[sel.ind, ]
+sel.grid <- select_df$grid
+inf_df <- complete_df[-sel.ind,]
+inf_df <- rbind(inf_df ,  
+                few_vars[!complete.cases(few_vars) ,])
+inf.grid <- inf_df$grid
+inf_df <- inf_df %>% dplyr::select(-grid)
+select_df <- select_df %>% dplyr::select(-grid)
+
+select_lm <- lm(Freq~ ., data= select_df)
+best_freq <- stepAIC(select_lm, direction = "both", 
+                      trace = 0, k = log(32), scope = list(upper = ~ ., lower = ~ age  ))
+print(names(best_freq$coefficients))
+```
+
+
+# Imputation and inference on Switching frequency
+
+```{r echo = FALSE,results= TRUE, include = TRUE}
+imputed <- mice(inf_df, m = 10,
+          maxit = 10, printFlag = FALSE)
+# plot(imputed, layout= c(3,5))
+
+imp_switch_fit <- with(imputed, lm(Freq ~ Alert + Conflict + age + ADHD+ BSSI  + Lifetime.NSSI.Group))
+
+
+summary(pool(imp_switch_fit))[2:9,c(1,2,3,6)] %>%
+  kable(digits = c(0,5,5,4), display,  col.names = c("", "Estimate", "Standard error", "P(*>0)"), row.names = FALSE) %>%
+  kable_classic(full_width  = F, font_size = 12)
+```
+
+### Residual analysis
+```{r include = TRUE, fig.show="hold", out.width='49%'}
+RS1=NULL
+PS1=NULL
+
+for(i in 1:5){
+  RS1=rbind(RS1,residuals(imp_switch_fit$analyses[[i]]))
+  RS=colMeans(RS1)
+  PS1=rbind(PS1,predict(imp_switch_fit$analyses[[i]])) 
+  PS=colMeans(PS1)}
+
+# for(i in 1:20) {
+#   plot(predict(imp_switch_fit$analyses[[i]]), residuals(imp_switch_fit$analyses[[i]]))
+# }
+
+
+
+# for(i in 1:20) {
+#   qqnorm(resid(imp_switch_fit$analyses[[i]]))
+#   qqline(resid(imp_switch_fit$analyses[[i]]))
+# }
+
+par(mar = c(4, 4, .3, .3))
+
+plot(PS, RS, xlab = "Predicted", ylab="Residuals", main = "Switching frequency residuals")
+qqnorm(resid(imp_switch_fit$analyses[[1]]))
+qqline(resid(imp_switch_fit$analyses[[1]]))
+
+```
+Residuals don't show any trends, appear to be normally distributed, therefore valid inferences can be drawn.  
+
+
+### Switching frequency Conclusions  
+age and BSSI and NSSI group negatively associated with switching frequency  
+
+# Dwell time model + results
+```{r}
+combod <- right_join(dwell_data, ants, by = "grid")
+combod <- combod %>%
+  mutate(Alert = scale(Alert)[,1],
+         Orient = scale(Orient)[,1],
+         Conflict = scale(Conflict)[,1])
+
+inf_df    <- combod[combod$grid %in% inf.grid, ]
+select_df <- combod[combod$grid %in% sel.grid, ]
+```
+
+```{r}
+n_imputes <- 3
+imputed <- mice(inf_df, m = n_imputes, maxit = 2, printFlag = F)
+```
+
+
+```{r echo= FALSE, include = TRUE, results=TRUE}
+# imp_fit <- with(imputed, lmer(log(Dwell.time) ~ (BSSI + Alert + Conflict + age + ADHD + Lifetime.NSSI.Group) : (1|State) +  (1|grid)))
+
+# imp_fit2 <- with(imputed, lmer(log(Dwell.time) ~ (BSSI + Alert + Conflict + age + ADHD + Lifetime.NSSI.Group) * (1|State) +  (1|grid)))
+# 
+# imp_fit3 <- with(imputed, lmer(log(Dwell.time) ~ (BSSI + Alert + Conflict + age + ADHD + Lifetime.NSSI.Group) * State +  (1|grid)))
+# imp_fit4 <- with(imputed, lmer(log(Dwell.time) ~ (BSSI+ age + Lifetime.NSSI.Group) : State+ADHD + Alert + Conflict+ (1|grid)))
+imp_fit<- with(imputed, lmer(log(Dwell.time) ~ (BSSI+ age + Lifetime.NSSI.Group) : State+ADHD + Alert + Conflict+ (1|grid)))
+
+
+
+
+# print(summary(pool(imp_fit)), digits = 2)
+
+library(magick)
+library(mitml)
+
+# summary(inf_df, type = 1) %>%
+#   kable() %>%
+#   kable_classic(full_width  = F)
+#  save_kable("../Tables_Figures/sample_description.png")
+
+# summary(pool(imp_switch_fit))[2:9,c(1,2,3,6)] %>%
+#   kable(digits = c(0,5,5,4), display,  col.names = c("", "Estimate", "Standard error", "P(*>0)"), row.names = FALSE) %>%
+#   kable_classic(full_width  = F, font_size = 12)
+ #  save_kable("../Tables_Figures/Switching_table.png")
+
+# Dwell fit summaries
+dwell_fit <- testEstimates(as.mitml.result(imp_fit), extra.pars = T)
+fixed <- dwell_fit$estimates[-1, c(1,2,5)]
+# rownames(fixed)[3] <- "Age"
+fixed <- as.data.frame(fixed)
+
+fixed %>% 
+  mutate(ID = row.names(fixed)) %>%
+  separate(ID, into = c("Effector", "State"), sep = ":") %>%
+  dplyr::select(Effector, State, Estimate, Std.Error, `P(>|t|)`) %>%
+  mutate(Effector= str_replace(Effector, "Lifetime.NSSI.Group.L", "Mild NSSI"),
+         Effector= str_replace(Effector, "Lifetime.NSSI.Group.Q", "Moderate NSSI"),
+         Effector= str_replace(Effector, "Lifetime.NSSI.Group.C", "Severe NSSI"),
+         State = str_remove(State, "State")) %>% 
+  kable(display, digits = c(3,3,3), row.names = FALSE) %>%
+  kable_classic(full_width = F, font_size = 12) # %>%  save_kable("../Tables_Figures/Dwell_fixed.png")
+
+rands <-  dwell_fit$extra.pars
+# rownames(rands) <- c("ID", "Residual","Residual")
+rands %>%
+  kable(display,  col.names = "$\\hat\\sigma$") %>%
+  kable_classic(full_width = F, font_size = 12) # %>% save_kable("../Tables_Figures/Dwell_rand.png")
+```
+
+
+## Residuals   
+```{r include = TRUE, fig.show="hold", out.width='49%'}
+# for (i in 1:10) {
+#   qqnorm(resid(imp_fit$analyses[[i]]))
+#   qqline(resid(imp_fit$analyses[[i]]))
+#   hist(resid(imp_fit$analyses[[i]]), probability = TRUE, main = "log link GLMM", xlab = "residual")
+#   lines(linspace(-3,2.5, n = 100), dnorm(linspace(-3,2.5, n = 100)))
+# 
+# }
+
+qqnorm(resid(imp_fit$analyses[[1]]))
+qqline(resid(imp_fit$analyses[[1]]))
+hist(resid(imp_fit$analyses[[1]]), probability = TRUE, main = "log link GLMM", xlab = "residual")
+lines(linspace(-3,2.5, n = 100), dnorm(linspace(-3,2.5, n = 100)))
+
+# inf_df %>%
+#   filter(grid %in% c(10038,10255, 10266, 10294, 10299, 10362, 10418, 10470, 10472, 10479,10480)) %>%
+#   ggplot(aes( x= Dwell.time, fill = grid)) +
+#   geom_density(alpha = 0.3) +
+#   facet_wrap(~State, scales = "free_y")
+
+# inf_df %>%
+#   ggplot(aes(x= BSSI, y= log(Dwell.time))) +
+#   geom_point(alpha = 0.3) +
+#   facet_wrap(~State, scales = "free_y")
+
+```
+Residuals have no trends and are normally distributed, therefore, inferences are appropriate.
+
+```{r}
+# dwell_data %>%
+#   ggplot(aes(x= Dwell.time)) +
+#   geom_density() + 
+#   facet_wrap(~State, scales= "free_y") + 
+#   scale_x_log10()
+```
+
+
+
+
+### Dwell time conclusions  
+**Consistent with the switching frequency model** -  BSSI, NSSI and age increase dwell time.   
+**In addition to switching model** - counterintuitively,  ADHD was found to increase dwell time.  

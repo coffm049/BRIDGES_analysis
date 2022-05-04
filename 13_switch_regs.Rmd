@@ -1,0 +1,125 @@
+---
+title: "13_all_correlations"
+author: "Christian Coffman"
+date: "2/26/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+
+df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Regressions/switching_data.csv") 
+
+
+```
+
+# Correlations between continuous predictive variables and Switching frequency   
+```{r}
+df %>% 
+  dplyr::select(age, BDI, BSSI,  lifetime_nssie, Freq) %>%
+  dplyr::rename(`Lifetime NSSIE`= lifetime_nssie, Age= age, `Switching frequency` = Freq) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  ggcorrplot::ggcorrplot()
+```
+
+# Make tall dataframe to regress all varaibles at once  
+```{r}
+tall <- df %>% 
+  # Set factor levels
+  mutate(Lifetime.NSSI.Group = factor(Lifetime.NSSI.Group, levels = c("No NSSI", "Mild NSSI", "Moderate NSSI", "Severe NSSI"))) %>%
+  # Make them nmeric
+  mutate(Lifetime.NSSI.Group = as.numeric(Lifetime.NSSI.Group)) %>%
+  dplyr::select(-c(grid, Lifetime.NSSI.Group)) %>%
+  dplyr::rename(`Log Lifetime NSSIE`= lifetime_nssie, Age= age, `Switching frequency` = Freq) %>%
+  pivot_longer(-c(`Switching frequency`, Age), names_to = "Variable", values_to = "Value")
+
+# Get missing positions
+missing <- tall %>% filter(is.na(Value))
+
+```
+
+
+
+Control for age in a analyses visualize fits
+```{r}
+tall %>%
+  mutate(`Switching frequency` = `Switching frequency` * 75) %>%
+  drop_na() %>%
+  group_by(Variable) %>%
+  nest() %>%
+  mutate(
+    mod = map(.x = data, .f = ~ lm(`Switching frequency` ~ Age + Value, data = .x)), # S3 list-col
+    predicts = map(mod, predict)
+  ) %>%
+  unnest(c(data, predicts)) %>%
+  ggplot(aes(x= Value, y = `Switching frequency`)) +
+  geom_point() +
+  geom_smooth(aes(y = predicts), se = F) +
+  facet_wrap(~ Variable, scale= "free_x", ncol = 2) +
+  ylab("Swithing Frequency (/min)") + 
+  xlab("") +
+  geom_rug(data = missing, inherit.aes=FALSE, aes(y = `Switching frequency` * 75), col = "red")
+
+```
+Control for age in regressinos and report fit estimates as well as BIC
+```{r}
+var_results <- tall %>%
+  # Change units of switching frequency to per minute
+  mutate(`Switching frequency` = `Switching frequency` * 75) %>%
+  drop_na() %>%
+  group_by(Variable) %>%
+  nest() %>%
+  mutate(
+    mod = map(.x = data, .f = ~ lm(`Switching frequency` ~ Age + Value, data = .x)), # S3 list-col
+    lmsums = map(mod, summary),
+    summs = map(lmsums, broom::tidy),
+    BIC = map(mod, BIC),
+    CIs = map(mod, confint)
+  ) %>%
+  unnest(c(summs, BIC, CIs)) %>% 
+  # Extract confidence intervals
+  mutate(lower = CIs[,1], upper = CIs[,2]) %>%
+  dplyr::select(Variable, estimate, std.error, term, p.value, BIC, lower, upper) %>%
+  filter(term == "Value")
+
+
+var_results$p.adusted <- p.adjust(var_results$p.value, method=  "holm")
+
+var_results
+```
+
+
+
+Visualize point estimates for varaibles of interest  
+```{r}
+
+separate <- var_results %>%
+  dplyr::select(Variable, estimate, lower, upper) %>%
+  ggplot(aes(x= Variable, y = estimate, ymin=lower, ymax = upper)) +
+  geom_point() + 
+  geom_errorbar() +
+  ylab(expression(paste("Estimated ", Delta, " switches / min"))) + 
+  xlab("")
+  
+
+
+# Multiple regression analysis with all varaibles 
+
+
+multi <- lm(Freq * 75 ~ age + BDI + BSSI + lifetime_nssie, data= df) %>%
+  confint() %>%
+  as.data.frame() %>%
+  dplyr::rename(lower = "2.5 %", upper = "97.5 %") %>%
+  mutate(est = (lower+ upper)/2) %>% 
+  mutate(Variable = row.names(.)) %>%
+  dplyr::filter(Variable != "(Intercept)") %>%
+  ggplot(aes(x = Variable, y= est, ymin = lower, ymax = upper)) +
+    geom_point() +
+    geom_errorbar() +
+    ylab(expression(paste("Estimated ", Delta, " switches / min"))) + 
+    xlab("")
+
+separate / multi
+```

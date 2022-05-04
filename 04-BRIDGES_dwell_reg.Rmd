@@ -1,0 +1,394 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = NA, message = FALSE, results = 'hide', warning= FALSE, echo = FALSE, include= TRUE, fig.height = 4, fig.width = 6, cache = FALSE)
+library(tidyverse)
+library(broom)
+library(broom.mixed)
+library(MASS)
+library(kableExtra)
+library(GGally)
+library(lme4)
+library(ramify)
+library(compiler)
+require(parallel)
+require(boot)
+require(lattice)
+library(reshape2)
+library(mice)
+library(miceadds)
+library(SuppDists)
+library(magick)
+library(mitml)
+```
+
+
+```{r}
+
+# dwell_data <- dwell_data %>% dplyr::select(grid, State, BSSI, BDI, Dwell.time, age, Lifetime.NSSI.Group, log_nssi_total)
+
+# Load the inference data
+#imputed <- mice(dwell_data, m = 50, printFlag = FALSE)
+#saveRDS(imputed, file = "/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Regressions/imputed_switching_data.rds")
+imputed <-readRDS("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Regressions/imputed_dwell_data.rds")
+age_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/switching_data.csv") 
+dwell_imp <- filter(imputed, grid %in% age_df$grid)
+
+# Split resulted in the proportions distributions of NSSI groups
+#      No  Mild    Mod    Severe  
+# Sel  0.33 0.1   0.31  0.26
+# Inf  0.40 0.03  0.35  0.22
+```
+
+<!-- # To do: -->
+<!-- - check a poisson glm model -->
+<!-- - good to go!  -->
+
+# Dwell time Model   
+
+# Most complex model (presented 8/19)  
+```{r include = TRUE, results=TRUE, fig.show="hold", out.width='49%'}
+# imp_fit<- with(imputed, glmer(Dwell.time ~ scale(as.numeric(Lifetime.NSSI.Group)) : State+ scale(age)+ (1|grid), family = Gamma(link = "log")))
+# # 
+# # # imp_fit<- with(imputed, lmer(log(Dwell.time) ~ (BSSI + Lifetime.NSSI.Group) : State+ADHD +age + Alert + Conflict+ (1|grid)))
+# # 
+# saveRDS(imp_fit, "gamma_log_regression_smaller.rds")
+# imp_fit <- readRDS("gamma_log_regression_smaller.rds")
+####################
+
+# dwell_imp <-readRDS("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Book_regressions/imputed_dwell_data.rds")
+
+
+dmod  <- with(dwell_imp, glmer(Dwell.time ~ scale(age) + scale(BSSI) + (State|grid), family = Gamma(link="log")))
+# dmod2 <- with(dwell_imp, glmer(Dwell.time ~ scale(age)*(1|State) + scale(BSSI) : (1|State) + (1|grid), family =1 Gamma(link="log")))
+# dmod4 <- with(dwell_imp, lmer(log(Dwell.time) ~ scale(age)*(1|State) + scale(BSSI) : (1|State) + (1|grid)))
+dmod2  <- with(dwell_imp, glmer(Dwell.time ~ scale(age) + scale(BSSI) + (1|State) + (1|grid), family = Gamma(link="log")))
+# look if covariates effect states differently
+fits <- as.data.frame(zeros(nrow=1, ncol = 6))
+colnames(fits) <- c("term", "estimate", "std.error", "statistic", "df", "p.value")
+for (state in 1:7) {
+  dwellx <- filter(dwell_imp, State == state)
+  fit <- with(dwellx, glmer(Dwell.time ~ scale(age) + scale(BSSI) + (1|grid), family = Gamma(link="log")))
+  fit <- summary(pool(fit), dispersion = 1)
+  fits <- rbind(fits, fit)
+}
+
+
+fits %>%
+  filter(term != 0) %>%
+  mutate(State= rep(c(1:7), each=3)) %>%
+  filter(term != "(Intercept)") %>%
+  ggplot(aes(x= State, y=estimate, col = term)) +
+  geom_point()
+
+
+dmodstates  <- with(dwell_imp[[1]], glmer(Dwell.time ~ scale(age)*(State|grid) +  scale(BSSI) * (State|grid), family = Gamma(link="log")))
+
+test <- glmer(Dwell.time ~ scale(BSSI)  + scale(age) + (1|State) + (1|grid), family = Gamma(link="log"), data= dwell_imp[[1]])
+```
+
+
+```{r}
+dwell_fit <- testEstimates(as.mitml.result(dmod), extra.pars = T)
+scatter.smooth(predict(dmodstates$analyses[[1]], type = "link") , (resid(dmodstates$analyses[[1]], type = "deviance")))
+dwell_fit2<- testEstimates(as.mitml.result(dmod2), extra.pars = T)
+
+
+compute_llike <- function(fit_object, nslopes) {
+  # fit_object is what was fit with the 'with' fucntion
+  # nslopes is the number of slopes being estimated in the model
+  # make predictions for each imputation
+  predlist <- lapply(fit_object$analyses, broom::augment)
+  # extract just the fits 
+  l <- matrix(nrow = 5550, ncol = 50)
+  for (i in 1:length(predlist)) {
+    l[,i] <- predlist[[i]][[6]]
+  }
+  pooledy <- apply(l, mean, MARGIN = 1)
+  data <- pooledy
+  # estimte sigma
+  hatvar <- sum((dwell_imp$data$Dwell.time - pooledy)**2)/(124-nslopes)
+  
+  llikeliy <- -(126/2) * log(2*3.14) - (126/2) * log(hatvar) - (1/2*hatvar) * sum((imputed$data$Freq - pooledy)**2)
+  llikeliy
+}
+
+l1 <- compute_llike(dmod, nslopes =2 )
+# so l2 is better that means accounting for 
+
+```
+
+
+```{r}
+
+test <- glmer.nb(Dwell.time ~ scale(age)*(1|State) + scale(BSSI) : (1|State) + (1|grid), data = dwell_imp$data)
+scatter.smooth(predict(dmod$analyses[[1]], type = "deviance") , (resid(dmod$analyses[[1]], type = "deviance"))) 
+mean(resid(dmod$analyses[[1]], type = "response")**2 / predict(dmod$analyses[[1]], type = "response"))
+
+# dmod3 <- with(dwell_imp, glmer(Dwell.time ~ scale(age)*(1|State) + scale(BSSI) : (1|State) + (1|grid), family = Gamma()))
+
+# selected dmod2 based on BIC
+dwell_fit <- testEstimates(as.mitml.result(dmod), extra.pars = T)
+dwellstates_fit <- testEstimates(as.mitml.result(dmodstates), extra.pars = T)
+
+
+fixed <- dwell_fit$estimates[-1, c(1,2,5)]
+# rownames(fixed)[3] <- "Age"
+fixed <- as.data.frame(fixed)
+
+
+
+RS1=NULL
+PS1=NULL
+
+for(i in 1:5){
+  RS1=rbind(RS1,residuals(dmod$analyses[[i]]))
+  RS=colMeans(RS1)
+  PS1=rbind(PS1,predict(dmod$analyses[[i]])) 
+  PS=colMeans(PS1)}
+
+
+# for(i in 1:20) {
+#   plot(predict(imp_switch_fit$analyses[[i]]), residuals(imp_switch_fit$analyses[[i]]))
+# }
+
+
+
+# for(i in 1:20) {
+#   qqnorm(resid(imp_switch_fit$analyses[[i]]))
+#   qqline(resid(imp_switch_fit$analyses[[i]]))
+# }
+
+as.data.frame(cbind(PS, RS**2)) %>%
+  ggplot(aes(x = PS, V2/PS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")+
+  scale_y_log10()
+
+as.data.frame(cbind(PS, RS**2)) %>%
+  summarize(m = mean(V2/PS))
+
+as.data.frame(cbind(PS, RS)) %>%
+  ggplot(aes(x = PS, RS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")
+
+# as.data.frame(RS) %>%
+#   ggplot(aes(sample = RS)) +
+#   geom_qq() +
+#   geom_qq_line() +
+#   ylab("Sample Quantile") +
+#   xlab("Theoretical Quantiles")
+
+
+
+fixed %>%
+  mutate(ID = row.names(fixed)) %>%
+  separate(ID, into = c("Effector", "State"), sep = ":") %>%
+  dplyr::select(Effector, State, Estimate, Std.Error, `P(>|t|)`) %>%
+  mutate(Effector= str_replace(Effector, "Lifetime.NSSI.Group.L", "Mild NSSI"),
+         Effector= str_replace(Effector, "Lifetime.NSSI.Group.Q", "Moderate NSSI"),
+         Effector= str_replace(Effector, "Lifetime.NSSI.Group.C", "Severe NSSI"),
+         State = str_remove(State, "State"),
+         ) %>% kable()
+  # kable(digits = c(3,3,3), row.names = FALSE, full_width = F, font_size = 12)
+rands <-  dwell_fit$extra.pars
+# rownames(rands) <- c("ID", "Residual","Residual")
+rands %>%
+  kable()
+  #kable(col.names = "$\\hat\\sigma$", full_width = F, font_size = 12) 
+  # kable_styling(latex_options = "striped")#   %>% save_kable("Dwell_rand.png")
+
+
+RS = NULL
+PS = NULL
+
+for(i in 1:5){
+  RS1=rbind(RS1,residuals(dmodstates$analyses[[i]]))
+  RS=colMeans(RS1)
+  PS1=rbind(PS1,predict(dmodstates$analyses[[i]])) 
+  PS=colMeans(PS1)}
+
+
+# for(i in 1:20) {
+#   plot(predict(imp_switch_fit$analyses[[i]]), residuals(imp_switch_fit$analyses[[i]]))
+# }
+
+
+
+# for(i in 1:20) {
+#   qqnorm(resid(imp_switch_fit$analyses[[i]]))
+#   qqline(resid(imp_switch_fit$analyses[[i]]))
+# }
+
+as.data.frame(cbind(PS, RS**2)) %>%
+  ggplot(aes(x = PS, V2/PS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")
+
+as.data.frame(cbind(PS, RS**2)) %>%
+  dplyr::filter(PS < 2.8) %>%
+  summarize(m = mean(V2/PS))
+
+as.data.frame(cbind(PS, RS)) %>%
+  ggplot(aes(x = PS, RS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")
+
+```
+\pagebreak
+
+# Age uniformly affecting each state   
+```{r results = TRUE,  fig.show="hold", out.width='49%'}
+imp_fit2<- with(imputed, lmer(log(Dwell.time) ~ (BSSI + Lifetime.NSSI.Group) : State+ADHD+ age + Alert + Conflict+ (1|grid)))
+
+# Dwell fit summaries
+dwell_fit2 <- testEstimates(as.mitml.result(imp_fit2), extra.pars = T)
+fixed2 <- dwell_fit2$estimates[-1, c(1,2,5)]
+# rownames(fixed)[3] <- "Age"
+fixed2 <- as.data.frame(fixed2)
+
+
+
+RS1=NULL
+PS1=NULL
+
+for(i in 1:5){
+  RS1=rbind(RS1,residuals(imp_fit2$analyses[[i]]))
+  RS=colMeans(RS1)
+  PS1=rbind(PS1,predict(imp_fit2$analyses[[i]])) 
+  PS=colMeans(PS1)}
+
+# for(i in 1:20) {
+#   plot(predict(imp_switch_fit$analyses[[i]]), residuals(imp_switch_fit$analyses[[i]]))
+# }
+
+
+
+# for(i in 1:20) {
+#   qqnorm(resid(imp_switch_fit$analyses[[i]]))
+#   qqline(resid(imp_switch_fit$analyses[[i]]))
+# }
+
+as.data.frame(cbind(PS, RS)) %>%
+  ggplot(aes(x = PS, RS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")
+
+as.data.frame(RS) %>%
+  ggplot(aes(sample = RS)) +
+  geom_qq() +
+  geom_qq_line() +
+  ylab("Sample Quantile") +
+  xlab("Theoretical Quantiles")
+
+
+fixed2 %>%
+  mutate(ID = row.names(fixed2)) %>%
+  separate(ID, into = c("Effector", "State"), sep = ":") %>%
+  dplyr::select(Effector, State, Estimate, Std.Error, `P(>|t|)`) %>%
+  mutate(Effector= str_replace(Effector, "Lifetime.NSSI.Group.L", "Mild NSSI"),
+         Effector= str_replace(Effector, "Lifetime.NSSI.Group.Q", "Moderate NSSI"),
+         Effector= str_replace(Effector, "Lifetime.NSSI.Group.C", "Severe NSSI"),
+         State = str_remove(State, "State")) %>%
+  kable(digits = c(3,3,3), row.names = FALSE)
+rands2 <-  dwell_fit2$extra.pars
+# rownames(rands) <- c("ID", "Residual","Residual")
+rands2 %>%
+  kable()
+```
+
+\pagebreak
+# Age uniformly affecting + NSSI as numeric  
+```{r results = TRUE,  fig.show="hold", out.width='49%'}
+imp_fit3<- with(imputed, lmer(log(Dwell.time) ~ (BSSI + as.numeric(Lifetime.NSSI.Group)) : State+ADHD + age + Alert + Conflict+ (1|grid)))
+
+# Dwell fit summaries
+dwell_fit3 <- testEstimates(as.mitml.result(imp_fit3), extra.pars = T)
+fixed3 <- dwell_fit3$estimates[-1, c(1,2,5)]
+# rownames(fixed)[3] <- "Age"
+fixed3 <- as.data.frame(fixed3)
+
+
+
+RS1=NULL
+PS1=NULL
+
+for(i in 1:5){
+  RS1=rbind(RS1,residuals(imp_fit3$analyses[[i]]))
+  RS=colMeans(RS1)
+  PS1=rbind(PS1,predict(imp_fit3$analyses[[i]])) 
+  PS=colMeans(PS1)}
+
+# for(i in 1:20) {
+#   plot(predict(imp_switch_fit$analyses[[i]]), residuals(imp_switch_fit$analyses[[i]]))
+# }
+
+
+
+# for(i in 1:20) {
+#   qqnorm(resid(imp_switch_fit$analyses[[i]]))
+#   qqline(resid(imp_switch_fit$analyses[[i]]))
+# }
+
+as.data.frame(cbind(PS, RS)) %>%
+  ggplot(aes(x = PS, RS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")
+
+as.data.frame(RS) %>%
+  ggplot(aes(sample = RS)) +
+  geom_qq() +
+  geom_qq_line() +
+  ylab("Sample Quantile") +
+  xlab("Theoretical Quantiles")
+
+
+fixed3 %>%
+  mutate(ID = row.names(fixed3)) %>%
+  separate(ID, into = c("Effector", "State"), sep = ":") %>%
+  dplyr::select(Effector, State, Estimate, Std.Error, `P(>|t|)`) %>%
+  mutate(Effector= str_replace(Effector, "as.numeric[(*)]", "")) %>%
+  kable(digits = c(3,3,3), row.names = FALSE)
+rands3 <-  dwell_fit3$extra.pars
+# rownames(rands) <- c("ID", "Residual","Residual")
+rands3 %>% kable()
+  # kable(col.names = "$\\hat\\sigma$", full_width = F, font_size = 12) 
+```
+
+<!-- ### Dwell time fit results   -->
+```{r include = TRUE, results }
+# fixed %>% 
+#   mutate(ID = row.names(fixed)) %>%
+#   separate(ID, into = c("Effector", "State"), sep = ":") %>%
+#   dplyr::select(Effector, State, Estimate, Std.Error, `P(>|t|)`) %>%
+#   mutate(Effector= str_replace(Effector, "Lifetime.NSSI.Group.L", "Mild NSSI"),
+#          Effector= str_replace(Effector, "Lifetime.NSSI.Group.Q", "Moderate NSSI"),
+#          Effector= str_replace(Effector, "Lifetime.NSSI.Group.C", "Severe NSSI"),
+#          State = str_remove(State, "State")) %>% 
+#   kable(digits = c(3,3,3), row.names = FALSE, full_width = F, font_size = 12) %>%
+#   kable_styling(latex_options = "striped") %>%  save_kable("Dwell_fixed.png")
+# 
+# rands <-  dwell_fit$extra.pars
+# # rownames(rands) <- c("ID", "Residual","Residual")
+# rands %>%
+#   kable(col.names = "$\\hat\\sigma$", full_width = F, font_size = 12) %>% 
+#   kable_styling(latex_options = "striped") %>% save_kable("Dwell_rand.png")
+```
+<!-- ![](/home/christian/Research/Booktry/Dwell_fixed.png){width=1.5in} -->
+<!-- ![](/home/christian/Research/Booktry/Dwell_rand.png){width=1.5in} -->
