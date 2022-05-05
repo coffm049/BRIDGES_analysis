@@ -1,0 +1,114 @@
+---
+title: Power spectra and overlaps
+author: "Christian Coffman"
+institute: University of Minnesota Twin Cities \newline
+           Division of Biostatistics
+date: |
+      12/31/2020 \newline \newline \newline 
+      ![](University_of_Minnesota.png){width=1.5in}
+output:
+  beamer_presentation:
+    theme: "Antibes"
+    slide_level: 3
+    toc: true
+    fonttheme: "structurebold"
+bibliography: /home/christian/Documents/library.bib
+csl: /home/christian/Documents/american-statistical-association.csl
+header-includes: 
+- \definecolor{Gold}{RGB}{255, 204, 51}
+- \definecolor{Maroon1}{RGB}{112, 0, 25}
+- \definecolor{Maroon2}{RGB}{92, 0, 15}
+- \definecolor{Maroon3}{RGB}{92, 0, 15}
+- \definecolor{Maroon4}{RGB}{82, 0, 10}
+- \setbeamercolor{palette primary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette sidebar tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette sidebar quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{item}{fg = Maroon1}
+---
+
+# high/low frequency ratio for IC's on a per subject basis.
+```{r setup, include=FALSE, echo = FALSE, results = FALSE, comment = "", warning = FALSE}
+knitr::opts_chunk$set(comment = NA, echo = FALSE, message = FALSE, results= 'hide', warning = FALSE)
+source("Scripts/01a_power_overlap_funcs.R")
+options(fsl.path = '/usr/local/fsl')
+options(fsl.outputtype = "NIFTI_GZ")
+
+# list of files to investigate
+ics_dir <- "../GIG/"
+timecourse.files <-list.files(paste0(ics_dir, 'timecourses/'), full.names = T)
+```
+
+
+```{r message=FALSE, warning=FALSE, comment="", results='hide', }
+# loop over all timecourses and calculate power spectra
+if (paste0(ics_dir, 'timecourses//freq_analysis.csv') %in% timecourse.files) {
+  print("frequency analysis already done, loading csv...")
+  highlow_long <- read_delim(paste0(ics_dir, 'timecourses/freq_analysis.csv'), delim=",")
+  all_powerspec <- read_delim(paste0(ics_dir, 'timecourses//powersepctra.csv'), delim = ",")
+} else{
+  power_ratio_looper(timecourse.files)
+  highlow_long <- read_delim(paste0(ics_dir, 'timecourses/freq_analysis.csv'), delim=",")
+  all_powerspec <- read_delim(paste0(ics_dir, 'timecourses//powersepctra.csv'), delim = ",")
+}
+```
+
+
+
+
+
+```{r include=FALSE, echo = FALSE, results = FALSE, comment = "", warning = FALSE}
+# reffile is The atlas nifty
+reffile = '/home/christian/Research/Brain_stuff/Atlases/MNI152.nii.gz'
+
+atlas_file = '/home/christian/Research/Brain_stuff/Atlases/Yeo_17_2mm_mni152.nii.gz'
+# need the matrix file as well for the atlas
+inmatrixfile ='/home/christian/Research/Brain_stuff/Atlases/Yeo_trans_MNI2mm_MNI1mm256x256x256.mat'
+#
+## Spatial sorting of group IC spatial maps.
+
+# Register to MNI152 space
+if ("IC_100.nii.gz" %in% list.files("../SMs/") ) {
+  print("Already registered to MNI152")
+} else {
+  # filpath of SM's from group level IC's
+  IC_SM <- '../GIG/gica_cmd_mean_component_ica_s_all_.nii'
+
+  # split the aggregate map into IC's (which are "time" dimension")
+  IC_SMlist = fslsplit(IC_SM, direction = "t")
+  # if this keeps crashing try writing them 15 at a time.
+  for (i in 1:100) {
+    # run flirt on each of the aggregate IC's
+    flirt(infile = IC_SMlist[[i]], reffile = reffile, dof = 6, reorient = T,
+                outfile = paste0('../SMs/IC_', i, '.nii.gz'))
+  }
+}
+
+
+```
+
+
+```{r}
+# Calculate the proportion of the IC contained within each given ROI
+# loop around subjects at a time to avoid crashing
+if ("overlapped_ICs.csv" %in% list.files( paste0("../thresh", threshold)) ) {
+  reftable <- read_delim(paste0("../thresh", threshold, '/overlapped_ICs.csv'), delim = ",")
+  IC_sizes <- read_delim(paste0("../thresh", threshold, '/IC_sizes.csv'), delim = ",") %>%
+    mutate(IC= factor(IC))
+  print("Already put into Yeo \n Loading csv's...") 
+} else {
+  loop_thresh_n_count(100)
+}
+
+```
+
+```{r}
+IC <- readNIfTI("SMs/IC_1.nii.gz")
+maxvox <- which(IC == max(IC), arr.ind=T)
+atlas <- readNIfTI(atlas_file)
+atlas[maxvox]
+```
