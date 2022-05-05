@@ -1,5 +1,5 @@
 ---
-title: Title here
+title: Power spectra and overlaps
 author: "Christian Coffman"
 institute: University of Minnesota Twin Cities \newline
            Division of Biostatistics
@@ -33,206 +33,56 @@ header-includes:
 
 # high/low frequency ratio for IC's on a per subject basis.
 ```{r setup, include=FALSE, echo = FALSE, results = FALSE, comment = "", warning = FALSE}
-library(fslr)
-library(tidyverse)
-library(broom)
-library(ramify)
-library(MASS)
-library(kableExtra)
-library(naniar)
-# library(nlme)
-library(plyr)
-
-
 knitr::opts_chunk$set(comment = NA, echo = FALSE, message = FALSE, results= 'hide', warning = FALSE)
-
+source("01a_power_overlap_funcs.R")
 options(fsl.path = '/usr/local/fsl')
 options(fsl.outputtype = "NIFTI_GZ")
 
-ics_dir <- "../GIG/"
-
 # list of files to investigate
-timecourse.files <-list.files(paste0(ics_dir, 'timecourses/'), full.names = T)
+ICfiles <- list.files("../SMs/", full.names = T)
+```
+
+```{r}
+# name ICs based on max voxel
+ICnames <- max_name_looper(ICfiles)
 ```
 
 
-```{r results='hide', message=FALSE, warning=FALSE}
-all_powerspec <- data.frame(matrix(nrow = 0, ncol = 4))
-
-
-all_highlow <- data.frame(matrix(nrow = 100, ncol = 1))
-# define time resoltuoin and number of time points
-tr <-0.8
-
-colnames(all_powerspec) <- c("subject", "IC", "Hz", "power")
-
-
-# loop over all timecourses and calculate power spectra
-if (paste0(ics_dir, 'timecourses//freq_analysis.csv') %in% timecourse.files) {
-  print("frequency analysis already done, loading csv...")
-  highlow_long <- read_delim(paste0(ics_dir, 'timecourses/freq_analysis.csv'), delim=",")
-  all_powerspec <- read_delim(paste0(ics_dir, 'timecourses//powersepctra.csv'), delim = ",")
-} else{
-  for (i in 1:length(timecourse.files)) {
-    nii.file <- readNIfTI(timecourse.files[[i]])
-    tps <- dim(nii.file)[1]
-    IC_times <- as.data.frame(nii.file)
-    IC_powerspec <- IC_times %>%
-      mutate(time = 1:tps) %>%
-      pivot_longer(colnames(IC_times) , names_to = "IC", values_to= "Signal") %>%
-      nest(data=-IC) %>%
-      mutate(powerspec = map(data, ~ fft(.$Signal, inverse = FALSE))) %>%
-      unnest(powerspec) %>%
-      mutate(fre = powerspec - 1/(tps*(1/tr)),
-             sqr_mod = abs(fre) **2,
-             power = sqr_mod /(tps * (1/tr)),
-             Hz = rep(linspace(0, 1/ (2 * tr), tps), 100)) %>%
-      filter(Hz < max(Hz)/2)
-    
-    # add poewr spectrum to list of powerspectra
-    all_powerspec <- IC_powerspec %>% 
-      mutate(subject = rep(i, each = 100 * 453)) %>%
-      dplyr::select(subject, IC, Hz, power) %>%
-      rbind(all_powerspec)
-
-    # get the low/high power ratio
-    high_low <- IC_powerspec %>%
-      filter(Hz > 0.01 & Hz < 0.25) %>%
-      mutate(low = Hz < 0.1) %>%
-      dplyr::group_by(IC, low) %>%
-      dplyr::summarize(cumul_power = sum(power)) %>%
-      pivot_wider(names_from = low, values_from = cumul_power) %>%
-      mutate(ratio = `TRUE`/`FALSE`)
-        
-    # add ratio to list of ratios
-    all_highlow[[paste0("subj", i)]] <- high_low$ratio
-  
-  }
-  
-  ICnumbs <- c("1", "10", "100","11", "12", "13", "14", "15", "16", "17", "18", "19", "2", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "3", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "4", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "5", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "6", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "7", "70", "71", "72", "73", "74", "75", "76", "77", "78", "79", "8", "80", "81", "82", "83", "84", "85", "86", "87", "88", "89", "9", "90", "91", "92", "93", "94", "95", "96", "97", "98", "99")
-  ICnumbs <- as.numeric(ICnumbs)
-  all_highlow["IC"] <- ICnumbs
-  
-
-  
-  
-  highlow_long <- all_highlow %>%
-    pivot_longer(cols = -IC, names_to= "Subject", values_to = "ratio")
-  # Save the output for later use if needed
-  write.csv(highlow_long, paste0(ics_dir, "timecourses/freq_analysis.csv"),  row.names = FALSE)
-  write.csv(all_powerspec, paste0(ics_dir, "timecourses/powersepctra.csv"), row.names=FALSE)
-}
-```
-
-
-
-
-
-```{r include=FALSE, echo = FALSE, results = FALSE, comment = "", warning = FALSE}
-# reffile is The atlas nifty
-reffile = '/home/christian/Research/Brain_stuff/Atlases/MNI152.nii.gz'
-
+```{r}
 atlas_file = '/home/christian/Research/Brain_stuff/Atlases/Yeo_17_2mm_mni152.nii.gz'
-# need the matrix file as well for the atlas
-inmatrixfile ='/home/christian/Research/Brain_stuff/Atlases/Yeo_trans_MNI2mm_MNI1mm256x256x256.mat'
-#
-## Spatial sorting of group IC spatial maps.
-
-# Register to MNI152 space
-if ("IC_100.nii.gz" %in% list.files("thresh50/SMs/") ) {
-  print("Already registered to MNI152")
-} else {
-  # filpath of SM's from group level IC's
-  IC_SM <- '../GIG/gica_cmd_mean_component_ica_s_all_.nii'
-
-  # split the aggregate map into IC's (which are "time" dimension")
-  IC_SMlist = fslsplit(IC_SM, direction = "t")
-  # if this keeps crashing try writing them 15 at a time.
-  for (i in 1:100) {
-    # run flirt on each of the aggregate IC's
-    flirt(infile = IC_SMlist[[i]], reffile = reffile, dof = 6, reorient = T,
-                outfile = paste0('../SMs/IC_', i, '.nii.gz'))
-  }
-}
-
-
-# Establish Yeo dictionary index
-Yeo_dict = c(0,"Noise", 1, "Visual A", 2, "Visual B", 3, "SomMotor A", 4, "SomMotor B", 5, "Temp Par", 6, "Dor Attn A",
-             7, "Dor Attn B", 8, "Sal/VenAttn A", 9, "Sal/VenAttn B", 10, "Control A", 11, "Control B", 12, "Control C",
-             13, "Default A", 14, "Default B", 15, "Default C", 16, "Limbic A", 17, "Limbic B", 24, "Left Cerebellum",
-             30, "Left Thalamus", 33, "Left Caudate", 36, "Left Putamen", 39, "Left Pallidum", 48, "Brainstem", 51, "Left Hippocampus",
-             54, "Left Amygdala", 78, "Left Accumbens", 84, "Left Ventral Diencephalon", 141, "Right Cerebellum", 147, "Right Thalamus",
-             150, "Right Caudate", 153, "Right Putamen", 156, "Right Pallidum", 159, "Right Hippocampus", 162, "Right Amygdala",
-             174, "Right Accumbens", 180, "Right Ventral Diencephalon"
-)
-yeotable <- as.data.frame(t(matrix(Yeo_dict,2)))
-colnames(yeotable)  <- c("ROI", "Name")
-
-reftable <- tibble(ROI = factor(0:184))
-
-ICsizes <- c()
 
 threshold <- 50
-
-
 # Calculate the proportion of the IC contained within each given ROI
 # loop around subjects at a time to avoid crashing
-if ("overlapped_ICs.csv" %in% list.files( paste0("../thresh", threshold)) ) {
-  reftable <- read_delim(paste0("../thresh", threshold, '/overlapped_ICs.csv'), delim = ",")
-  IC_sizes <- read_delim(paste0("../thresh", threshold, '/IC_sizes.csv'), delim = ",") %>%
-    mutate(IC= factor(IC))
-  print("Already put into Yeo \n Loading csv's...") 
-} else {
+reftable <- read_delim(paste0("../thresh", threshold, '/overlapped_ICs.csv'), delim = ",")
+IC_sizes <- read_delim(paste0("../thresh", threshold, '/IC_sizes.csv'), delim = ",") %>%
+  mutate(IC= factor(IC))
+print("Already put into Yeo \n Loading csv's...") 
+```
 
-  for (i in 1:100) {
-    print(i)
-    # thresholded at 50 percent signal (This was chosen rather hastily, so might be worth investigating an optimum)
-    binary <- fslmaths(paste0('../SMs/IC_', i, '.nii.gz'), opts ='-abs -thrP 50 -bin')
-    # multiply it by the Yeo atlas.
-    ICsize <- sum(binary)
-    ICsizes <- append(ICsizes, ICsize)
+```{r}
 
-    yeo <- fslmaths(binary, opts =paste0('-mul ', atlas_file))
-    in_Yeo_df <- as.data.frame(table(yeo)) %>%
-      dplyr::rename(ROI = yeo, Size= Freq)
-    reftable <- reftable %>%
-      mutate(ROI = ROI) %>%
-      left_join(in_Yeo_df, by = "ROI")
-  }
-  for (i in 1:100) {
-    colnames(reftable)[i+1] <- paste0("ICpixels_", i)
-  }
-  IC_sizes <- data.frame(IC=  factor(1:100), IC_size = ICsizes)
-  # save the results
-  write.csv(IC_sizes, "../thresh50/IC_sizes.csv",  row.names = FALSE)
-  write.csv(reftable, "../thresh50/overlapped_ICs.csv",  row.names = FALSE)
-
-}
-
-
-Yeo_sizes <- 
-  as.data.frame(table(readNIfTI2(atlas_file)))%>%
-  dplyr::rename(ROI = Var1, ROI_size = Freq) %>%
-  mutate(ROI = factor(ROI)) %>%
-  filter(ROI %in% yeotable$ROI)
+# Yeo_sizes <- as.data.frame(table(readNIfTI2(atlas_file)))%>%
+#   dplyr::rename(ROI = Var1, ROI_size = Freq) %>%
+#   mutate(ROI = factor(ROI)) %>%
+#   filter(ROI %in% yeotable$ROI)
 
 
 # stack all ICs and filter out ROI 0 (which cuts out real signal in the unlabeled region and nonsignal)
+# total_tab <- reftable %>%
+#   mutate(ROI = factor(ROI)) %>%
+#   left_join(Yeo_sizes, by = "ROI") %>%
+#   left_join(Yeo_dict, by = "ROI")
+#   # pivot_longer(cols = c("ROI", "ROI_size"), names_to = "IC", values_to = "Overlap")
+# total_tab$IC <- factor(sapply(strsplit(total_tab$IC,"_"), `[`, 2))
 
 
-total_tab <- reftable %>%
-  mutate(ROI = factor(ROI)) %>%
-  left_join(Yeo_sizes, by = "ROI") %>%
-  pivot_longer(cols = -c("ROI", "ROI_size"), names_to = "IC", values_to = "Overlap")
-total_tab$IC <- factor(sapply(strsplit(total_tab$IC,"_"), `[`, 2))
-
-
- 
-total_tab <-total_tab %>% 
-  left_join(IC_sizes, by = "IC") %>%
-  drop_na(ROI_size) %>%
-  filter(ROI != 0) %>%
-  mutate(prop_ROI = Overlap/ROI_size, prop_IC = Overlap / IC_size, DICE = Overlap /(ROI_size + IC_size)) 
+#  
+# total_tab <-total_tab %>% 
+#   left_join(IC_sizes, by = "IC") %>%
+#   drop_na(ROI_size) %>%
+#   filter(ROI != 0) %>%
+#   mutate(prop_ROI = Overlap/ROI_size, prop_IC = Overlap / IC_size, DICE = Overlap /(ROI_size + IC_size)) 
 ```
 
 
