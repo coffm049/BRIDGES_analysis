@@ -1,0 +1,12 @@
+load(...post_process.mat)
+
+# in clusterinfo important files are corrs_states(correlation structure of meta states) and states (vector of which state is occupied.
+
+# save copy into a text file then run
+:%s/val(:,:,.*//g
+
+:%s/     //g
+:%s/\n/,/g
+:%s/,,,,,/,/g
+
+
