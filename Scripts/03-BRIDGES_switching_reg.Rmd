@@ -1,0 +1,157 @@
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = NA, message = FALSE, results = 'hide', warning= FALSE, echo = FALSE, include= TRUE, fig.height = 4, fig.width = 6, cache = FALSE)
+library(tidyverse)
+library(broom)
+library(broom.mixed)
+library(lme4)
+library(mice)
+library(miceadds)
+library(selectiveInference)
+library(mitml)
+library(gtsummary)
+library(gt)
+```
+
+
+
+
+# Imputation and inference on Switching frequency
+
+```{r echo = FALSE,results= TRUE, include = TRUE}
+`%notin%` <- Negate(`%in%`)
+ex <-  c(9356, 8445, 9995, 9979, 8529)
+df <- read.csv("../switch_regvars.csv") %>%  filter(grid %notin% c(9995))
+imputed <- mice(df)
+imputed <- mice::filter(imputed, grid %in% age_df$grid)
+
+imp1 <- complete(imputed, action = 1)
+
+
+mod <- lm(Freq ~ age + BDI, data=  imputed$data)
+summary(mod)
+
+X <- data.matrix(imp1[,c(3,4,6,7,8,22)])
+y <- data.matrix(imp1[24])
+
+
+
+
+stepped <- fs(X, y)
+fsInf(stepped)
+
+test <- fsInf(stepped, k = 2, type= "all")
+
+                   
+
+imp_switch_fit <- with(imputed, lm(Freq ~ age +  BSSI))
+
+switch_age <- with(imputed, lm(Freq ~ age))
+switch_all <- with(imputed, lm(Freq ~ age +  BSSI + BDI + log_nssi_total))
+switch_BSSI <- with(imputed, lm(Freq ~ age +  BSSI))
+switch_BDI <- with(imputed, lm(Freq ~ age + BDI))
+switch_Mod_Severe <- with(imputed, lm(Freq ~ Mod_Severe))
+switch.NSSI.Group <- with(imputed, lm(Freq ~ Lifetime.NSSI.Group))
+summary(pool(switch_all))
+testEstimates(as.mitml.result(switch_age), extra.pars = FALSE)
+
+switch_nssi1 <- with(imputed, lm(Freq ~ age + lifetime_nssie))
+switch_nssi2 <- with(imputed, lm(Freq ~ age + exp(lifetime_nssie)))
+```
+
+```{r}
+imp_switch_fit <- with(imputed, lm(Freq ~ age +  BSSI))
+as.data.frame(summary(pool(imp_switch_fit))) %>%
+  select(term)
+
+tbl_regression(imp_switch_fit) %>%
+  as_gt() %>% 
+  tab_header(title = "Switching frequency regression results") %>% 
+  gtsave("../Switch_regression.png")
+```
+
+
+
+
+```{r include = TRUE, fig.show="hold", out.width='49%'}
+RS1=NULL
+PS1=NULL
+
+for(i in 1:5){
+  RS1=rbind(RS1,residuals(imp_switch_fit$analyses[[i]]))
+  RS=colMeans(RS1)
+  PS1=rbind(PS1,predict(imp_switch_fit$analyses[[i]])) 
+  PS=colMeans(PS1)}
+
+# for(i in 1:20) {
+#   plot(predict(imp_switch_fit$analyses[[i]]), residuals(imp_switch_fit$analyses[[i]]))
+# }
+
+
+
+# for(i in 1:20) {
+#   qqnorm(resid(imp_switch_fit$analyses[[i]]))
+#   qqline(resid(imp_switch_fit$analyses[[i]]))
+# }
+
+as.data.frame(cbind(PS, RS)) %>%
+  ggplot(aes(x = PS, RS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylab("Residual") +
+  xlab("Predicted value")
+
+as.data.frame(RS) %>%
+  ggplot(aes(sample = RS)) +
+  geom_qq() +
+  geom_qq_line() +
+  ylab("Sample Quantile") +
+  xlab("Theoretical Quantiles")
+
+```    
+  
+Residuals don't show any trends, appear to be normally distributed, therefore valid inferences can be drawn.  
+
+Plot frequency vs NSSI group and age
+
+```{r}
+df <- imputed$data
+
+df %>% 
+  filter(Lifetime.NSSI.Group == "No NSSI") %>%
+  summarize(cor(Freq, as.numeric(age)))
+
+df %>% 
+  group_by(Lifetime.NSSI.Group) %>%
+  summarize(cor(Freq, as.numeric(age)))
+
+```
+
+
+```{r}
+r <- resid(lm(Freq~ age + BSSI, data = age_df))
+age_df %>%
+  dplyr::select(age, BSSI, Freq)  %>%
+  drop_na() %>%
+  mutate(Residual = r, age = as.numeric(age), Age= age) %>%
+  pivot_longer(c(Age,BSSI), names_to = "Variable", values_to = "Measure") %>%
+  ggplot(aes( x= Measure, y = Residual)) +
+  geom_point() +
+  geom_smooth(span = 1) + 
+  facet_wrap(~Variable, scale="free_x")
+```
+
+
+```{r}
+#####################################
+## New depression variable 
+age_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/switching_data.csv")
+current_depress <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/current_depression.csv")
+
+age_df <- age_df %>% 
+  dplyr::select(grid, age, BSSI, Freq) %>%
+  mutate(depr = grid %in% current_depress$GRID.number.)
+
+summary(lm(Freq ~ depr, data= age_df))
+
+```
+

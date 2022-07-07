@@ -1,0 +1,97 @@
+---
+title: Power spectra and overlaps
+author: "Christian Coffman"
+institute: University of Minnesota Twin Cities \newline
+           Division of Biostatistics
+date: |
+      12/31/2020 \newline \newline \newline 
+      ![](University_of_Minnesota.png){width=1.5in}
+output:
+  beamer_presentation:
+    theme: "Antibes"
+    slide_level: 3
+    toc: true
+    fonttheme: "structurebold"
+bibliography: /home/christian/Documents/library.bib
+csl: /home/christian/Documents/american-statistical-association.csl
+header-includes: 
+- \definecolor{Gold}{RGB}{255, 204, 51}
+- \definecolor{Maroon1}{RGB}{112, 0, 25}
+- \definecolor{Maroon2}{RGB}{92, 0, 15}
+- \definecolor{Maroon3}{RGB}{92, 0, 15}
+- \definecolor{Maroon4}{RGB}{82, 0, 10}
+- \setbeamercolor{palette primary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon1, fg = Gold}
+- \setbeamercolor{palette sidebar secondary}{bg=Maroon2, fg = Gold}
+- \setbeamercolor{palette sidebar tertiary}{bg=Maroon3, fg = Gold}
+- \setbeamercolor{palette sidebar quaternary}{bg=Maroon4, fg = Gold}
+- \setbeamercolor{item}{fg = Maroon1}
+---
+
+# high/low frequency ratio for IC's on a per subject basis.
+```{r setup, include=FALSE, echo = FALSE, results = FALSE, comment = "", warning = FALSE}
+knitr::opts_chunk$set(comment = NA, echo = FALSE, message = FALSE, results= 'hide', warning = FALSE)
+source("01a_power_overlap_funcs.R")
+options(fsl.path = '/usr/local/fsl')
+options(fsl.outputtype = "NIFTI_GZ")
+
+# list of files to investigate
+ics_dir <- "../GIG/"
+timecourse.files <-list.files(paste0(ics_dir, 'timecourses/'), full.names = T)
+```
+
+# loop over all timecourses and calculate power spectra
+```{r message=FALSE, warning=FALSE, comment="", results='hide', }
+if (paste0(ics_dir, 'timecourses//freq_analysis.csv') %in% timecourse.files) {
+  print("frequency analysis already done, loading csv...")
+  highlow_long <- read_delim(paste0(ics_dir, 'timecourses/freq_analysis.csv'), delim=",")
+  all_powerspec <- read_delim(paste0(ics_dir, 'timecourses//powersepctra.csv'), delim = ",")
+} else{
+  power_ratio_looper(timecourse.files)
+  highlow_long <- read_delim(paste0(ics_dir, 'timecourses/freq_analysis.csv'), delim=",")
+  all_powerspec <- read_delim(paste0(ics_dir, 'timecourses//powersepctra.csv'), delim = ",")
+}
+```
+
+# Calculate overlaps  
+```{r include=FALSE, echo = FALSE, results = FALSE, comment = "", warning = FALSE}
+# reffile is The atlas nifty
+reffile = '/home/christian/Research/Brain_stuff/Atlases/MNI152.nii.gz'
+# alreday Registered to MNI152 space
+# filpath of SM's from group level IC's
+IC_SM <- '../GIG/gica_cmd_mean_component_ica_s_all_.nii'
+
+# split the aggregate map into IC's (which are "time" dimension")
+IC_SMlist = fslsplit(IC_SM, direction = "t")
+```
+
+
+```{r}
+# Calculate the proportion of the IC contained within each given ROI
+# loop around subjects at a time to avoid crashing
+if ("overlapped_ICs.csv" %in% list.files( paste0("../thresh", threshold)) ) {
+  reftable <- read_delim(paste0("../thresh", threshold, '/overlapped_ICs.csv'), delim = ",")
+  IC_sizes <- read_delim(paste0("../thresh", threshold, '/IC_sizes.csv'), delim = ",") %>%
+    mutate(IC= factor(IC))
+  print("Already put into Yeo \n Loading csv's...") 
+} else {
+  loop_thresh_n_count(100)
+}
+
+```
+
+
+# Label by max voxel locations
+```{r}
+atlas <- readNIfTI(atlas_file)
+max_namer(IC_SMlist[[13]], atlas = atlas, names = Yeo_dict)
+# didn't wirte files so IC's are ordered as they are in hte SM output 
+names <- max_name_looper(IC_SMlist)
+ICnames <- data.frame(IC = 1:100, 
+                      ICname = names) %>%
+  write.csv("../IClabels.csv", quote = F, row.names = F, col.names = T)
+
+```

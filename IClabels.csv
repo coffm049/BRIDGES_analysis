@@ -1,0 +1,101 @@
+IC,ICname
+1,SomMotor B
+2,Visual A
+3,SomMotor A
+4,Visual A
+5,Noise
+6,Visual B
+7,Visual A
+8,Visual B
+9,Right Putamen
+10,SomMotor A
+11,Right Putamen
+12,Visual B
+13,Noise
+14,Noise
+15,Right Cerebellum
+16,SomMotor A
+17,Visual A
+18,Brainstem
+19,Dor Attn B
+20,SomMotor B
+21,Visual A
+22,Visual B
+23,Left Cerebellum
+24,Dor Attn A
+25,Temp Par
+26,Default C
+27,Noise
+28,Temp Par
+29,Left Cerebellum
+30,Temp Par
+31,Default A
+32,Limbic A
+33,Default A
+34,Noise
+35,Control C
+36,Sal/VenAttn A
+37,Visual A
+38,Control C
+39,Visual A
+40,Visual B
+41,Visual A
+42,Dor Attn B
+43,Noise
+44,Limbic A
+45,Limbic A
+46,Visual A
+47,Default B
+48,Limbic A
+49,Default C
+50,Default A
+51,Noise
+52,Control B
+53,Sal/VenAttn B
+54,Limbic B
+55,Sal/VenAttn A
+56,Default A
+57,Noise
+58,Noise
+59,Limbic B
+60,Default C
+61,SomMotor B
+62,Limbic B
+63,Dor Attn B
+64,Left Cerebellum
+65,Noise
+66,Noise
+67,Noise
+68,Temp Par
+69,SomMotor A
+70,Default A
+71,Noise
+72,Noise
+73,Default B
+74,Default B
+75,Dor Attn A
+76,Noise
+77,Control B
+78,Default B
+79,Noise
+80,Dor Attn A
+81,Left Cerebellum
+82,Sal/VenAttn B
+83,Noise
+84,Control C
+85,Visual A
+86,Limbic A
+87,Default A
+88,Left Caudate
+89,Left Pallidum
+90,Sal/VenAttn A
+91,Dor Attn B
+92,SomMotor B
+93,Noise
+94,Noise
+95,Limbic A
+96,Sal/VenAttn A
+97,Noise
+98,Limbic B
+99,Limbic A
+100,Default B

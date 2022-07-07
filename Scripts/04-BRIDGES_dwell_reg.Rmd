@@ -1,0 +1,50 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = NA, message = FALSE, results = 'hide', warning= FALSE, echo = FALSE, include= TRUE, fig.height = 4, fig.width = 6, cache = FALSE)
+library(tidyverse)
+library(broom)
+library(broom.mixed)
+library(MASS)
+library(kableExtra)
+library(GGally)
+library(lme4)
+library(ramify)
+library(compiler)
+require(parallel)
+require(boot)
+require(lattice)
+library(reshape2)
+library(mice)
+library(miceadds)
+library(mitml)
+library(gt)
+library(gtsummary)
+```
+
+
+```{r}
+
+dwell_data <- dwell_data %>% dplyr::select(grid, State, BSSI, BDI, Dwell.time, age, Lifetime.NSSI.Group, log_nssi_total)
+
+# Load the inference data
+# imputed <- mice(dwell_data, m = 50, printFlag = FALSE)
+age_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Regressions/Select_subject_data.csv") 
+dwell_imp <- filter(imputed, grid %in% age_df$grid)
+
+
+dmod  <- glmer(Dwell.time ~ scale(age) + scale(BSSI) + (1|grid) + (1|State), family = Gamma(link="log"), data = dwell_data)
+
+tbl_regression(dmod) %>%
+  as_gt() %>%
+  tab_header(title = "Dwell time regression results") %>%
+  gtsave("../dwell_reg.png")
+# Split resulted in the proportions distributions of NSSI groups
+#      No  Mild    Mod    Severe  
+# Sel  0.33 0.1   0.31  0.26
+# Inf  0.40 0.03  0.35  0.22
+```
+

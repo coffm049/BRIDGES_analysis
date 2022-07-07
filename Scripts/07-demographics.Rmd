@@ -1,0 +1,223 @@
+---
+title: "07-Demographics_table"
+author: "Christian Coffman"
+date: "1/4/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/Medications.csv")
+age_df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/switching_data.csv") 
+katie_cats <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/Medications - updated KC.csv")
+
+```
+
+Most updated after Dr Cullen's advice on how to categorize drugs
+```{r}
+pyscho_meds <- df %>%
+  filter(redcap_event_name == "clinical_assessmen_arm_1") %>%
+  select(grid, contains("med")) %>%
+  select(1:7) %>%
+  pivot_longer(-grid, names_to="which", values_to = "Names") %>%
+  mutate(Names = toupper(Names)) %>%
+  drop_na() %>%
+  filter(Names != 0, Names != "NA", Names != "N/A", Names != "")
+
+# Count number on psychotropic
+left_join(pyscho_meds, katie_cats, by = "Names") %>%
+  filter(grid %in% age_df$grid) %>%
+  group_by(grid, Simplified) %>%
+  # count number of psychotropic meds per person, then count how many greater than 1
+  summarize(count = n()) %>%
+  mutate(Pyscho_meds= count > 0) %>%
+  ungroup() %>%
+  summarize(sum(Pyscho_meds))
+
+# Count number on each type of drug
+left_join(pyscho_meds, katie_cats, by = "Names") %>%
+  filter(grid %in% age_df$grid) %>%
+  group_by(grid, Class) %>%
+  # count number of each class per person, then count how many greater than 1
+  summarize(count = n()) %>%
+  mutate(Pyscho_meds= count > 0) %>%
+  ungroup() %>%
+  group_by(Class) %>%
+  summarize(sum(Pyscho_meds)/124 * 100) %>% tail()
+```
+
+
+```{r}
+left_join(pyscho_meds, katie_cats, by = "Names") %>%
+  filter(Names == "ELOQUIST")
+```
+Preliminary categories before Dr. Cullen's advice
+```{r}
+# Psychotroopic types: antidepressants, anti-anxiety medications, stimulants, antipsychotics, and mood stabilizers
+# Meds: Prozac, Zoloft, Methylphenidate, Citalopram, Venlafaxine, Adderall, Fluoxetine, Concerta, escitalopram, Lamotrigine, Lithium, 
+pyscho_meds <- df %>%
+  select(grid, contains("med")) %>%
+  select(1:7) %>%
+  pivot_longer(-grid, names_to="which", values_to = "medication") %>%
+  mutate(medication = toupper(medication)) %>%
+  drop_na() %>%
+  filter(medication != 0, medication != "NA", medication != "N/A")
+
+pyscho_meds <- pyscho_meds %>% summarise(Names = unique(medication)) %>%
+  mutate(Simplified = 
+           case_when(str_detect(Names, "PROZ") ~ "PSYCHO",
+                     str_detect(Names, "TRAZ") ~ "PSYCHO",
+                     str_detect(Names, "ZOLO") ~ "PSYCHO", 
+                     str_detect(Names, "ADERALL") ~ "PSYCHO",
+                     str_detect(Names, "CITALOPRAM") ~ "PSYCHO",
+                     str_detect(Names, "VYVANSE") ~ "PSYCHO",
+                     str_detect(Names, "ADDERALL") ~ "PSYCHO", 
+                     str_detect(Names, "METHYLPHENIDATE") ~ "PSYCHO",
+                     str_detect(Names, "ADHD") ~ "PSYCHO",
+                     str_detect(Names, "ABILIFY") ~ "PSYCHO",
+                     str_detect(Names, "ARIPIPRAZOLE") ~ "PSYCHO",
+                     str_detect(Names, "ATOMOXETINE") ~ "PSYCHO",
+                     str_detect(Names, "BUPROPRINE") ~ "PSYCHO",
+                     str_detect(Names, "BUSIPRONE") ~ "PSYCHO",
+                     str_detect(Names, "BUSPAR") ~ "PSYCHO",
+                     str_detect(Names, "BUSPIRONE") ~ "PSYCHO",
+                     str_detect(Names, "BUSPIRONE") ~ "PSYCHO",
+                     str_detect(Names, "CELEXA") ~ "PSYCHO",
+                     str_detect(Names, "CONCERTA") ~ "PSYCHO",
+                     str_detect(Names, "CYMBALTA") ~ "PSYCHO",
+                     str_detect(Names, "DEXTROAMPHETAMINE") ~ "PSYCHO",
+                     str_detect(Names, "DULOXETINE") ~ "PSYCHO",
+                     str_detect(Names, "EFFEXOR") ~ "PSYCHO",
+                     str_detect(Names, "FLUOXETINE") ~ "PSYCHO",
+                     str_detect(Names, "FOCALIN") ~ "PSYCHO",
+                     str_detect(Names, "GABAPENTIN") ~ "PSYCHO",
+                     str_detect(Names, "GUANFACINE") ~ "PSYCHO",
+                     str_detect(Names, "INVEGA") ~ "PSYCHO",
+                     str_detect(Names, "LAMICTAL") ~ "PSYCHO",
+                     str_detect(Names, "KLONOPAN") ~ "PSYCHO",
+                     str_detect(Names, "LEXAPRO") ~ "PSYCHO",
+                     str_detect(Names, "Lithium") ~ "PSYCHO",
+                     str_detect(Names, "METHYLFENIDATE") ~ "PSYCHO",
+                     str_detect(Names, "MIRTAZIPINE") ~ "PSYCHO",
+                     str_detect(Names, "PRISTIQ") ~ "PSYCHO",
+                     str_detect(Names, "QUETIAPINE") ~ "PSYCHO",
+                     str_detect(Names, "RISPERIDONE") ~ "PSYCHO",
+                     str_detect(Names, "RITALIN") ~ "PSYCHO",
+                     str_detect(Names, "SERTALINE") ~ "PSYCHO",
+                     str_detect(Names, "STRATERRA") ~ "PSYCHO",
+                     str_detect(Names, "STRATTERA") ~ "PSYCHO",
+                     str_detect(Names, "SYMBALTA") ~ "PSYCHO",
+                     str_detect(Names, "VENLAFAXINE") ~ "PSYCHO",
+                     str_detect(Names, "WELLBUTRIN") ~ "PSYCHO",
+                     str_detect(Names, "ZIPRASIDONE") ~ "PSYCHO",
+                     )) #%>%
+  drop_na()
+
+
+df %>%
+  filter(grid %in% age_df$grid, redcap_event_name == "clinical_assessmen_arm_1") %>%
+  select(grid, contains("med")) %>%
+  select(1:7) %>%
+  pivot_longer(-grid, names_to="which", values_to = "medication") %>%
+  drop_na() %>%
+  mutate(medication = toupper(medication)) %>%
+  filter(medication %in% pyscho_meds$Names) %>%
+  summarize(Grids = unique(grid))
+```
+
+```{r}
+df<- readxl::read_xlsx("../../../KSADS_Project2.xlsx", col_names = TRUE, skip = 1)
+df2 <-df %>% 
+  dplyr::select("grid", "redcap_event_name", contains("diagnosis"), -contains("specify")) %>%
+  dplyr::filter(redcap_event_name == "clinical_assessmen_arm_1", grid %in% age_df$grid)  %>%
+  pivot_longer(-c(grid, redcap_event_name), names_to = "order", values_to = "code") %>%
+  drop_na() %>%
+  mutate(Diagnosis = case_when(code ==1 | code == 2 ~ "Depression",
+                               code ==3 | code == 4 ~ "BP",
+                               code ==5 ~ "PTSD",
+                               code %in% 6:9 ~ "Anxiety",
+                               code == 11 ~ "OCD",
+                               code == 12 ~ "ADHD",
+                               code == 15 ~ "SCZ")) %>%
+  group_by(Diagnosis) # %>%
+df2 %>%   summarise(n())
+```
+
+```{r}
+imputed <-readRDS("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/GIG-ICA-5-updated-GIFT/thresh50/Book_regressions/imputed_switching_data.rds")
+
+imputed$data %>%
+  filter(grid %in% age_df$grid) %>% 
+  summary()
+
+# Join depression data in and regress
+df2 %>% 
+  mutate(Depress = Diagnosis == "Depression") %>% 
+  dplyr::select(grid, Depress) %>%
+  group_by(grid) %>%
+  summarise(Dep = sum(Depress)) %>% summarise(sum(Dep, na.rm = TRUE))
+
+
+df2 %>% 
+  mutate(Depress = Diagnosis == "Depression", grid = factor(grid)) %>% 
+  dplyr::select(grid, Depress) %>%
+  left_join(imputed$data, by = "grid") %>%
+  lm(Freq ~ Depress, na.rm=TRUE, data = .) %>%
+  summary()
+
+```
+
+```{r}
+
+df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/complete bridges y1.csv")
+
+df %>% 
+  filter(grid %in% age_df$grid) %>% 
+  select(grid, Psychotropic_med) %>%
+  filter(is.na(Psychotropic_med))
+
+df %>% 
+  dplyr::filter(grid %in% age_df$grid) %>%
+  mutate(Lifetime.NSSI.Group = factor(Lifetime.NSSI.Group), gender_identity = factor(gender_identity), sexual_orientation = factor(sexual_orientation), race = factor(race), hispanic_latino_binary = factor(hispanic_latino_binary), Psychotropic_med = factor(Psychotropic_med)) %>%
+  dplyr::select(grid, Lifetime.NSSI.Group, gender_identity, sexual_orientation, race, hispanic_latino_binary, Psychotropic_med, gross_income, suicide_attempt, lifetime_nssie, lifetime_number_attempts, sitbi  ) %>%
+  mutate(Income = case_when(gross_income == 5 ~ "$25k-$39k",
+                            gross_income == 6 ~ "$40k-$59k",
+                            gross_income == 7 ~ "$60k-$89k",
+                            gross_income == 8 ~ "$90k-$179k",
+                            gross_income == 9 ~ "$180k+"),
+         Income = factor(Income),
+         suicide_attempt = factor(suicide_attempt)) %>%
+  summary()
+
+df %>% 
+  dplyr::filter(grid %in% age_df$grid) %>%
+  dplyr::select(nssi_engagement, suicide_attempt, lifetime_nssie, lifetime_number_attempts  ) %>%
+  mutate(
+    nssi_engagement = factor(nssi_engagement),
+    suicide_attempt = factor(suicide_attempt)) %>%
+  summary()
+
+df %>% 
+  dplyr::select(age)
+```
+
+
+```{r}
+subj_df <- df
+subj_df$lifetime_number_attempts <- as.character(subj_df$lifetime_number_attempts)
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "4-Mar"] <- 4.5
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "15-Oct"] <- 12.5
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "3 or 4"] <- 3.5
+subj_df$lifetime_number_attempts[subj_df$lifetime_number_attempts == "1-Mar"] <- 2
+subj_df$lifetime_number_attempts <- as.numeric(subj_df$lifetime_number_attempts)
+subj_df$lifetime_number_attempts[is.na(subj_df$lifetime_number_attempts)] <- 0
+
+subj_df %>%
+  dplyr::filter(grid %in% age_df$grid) %>%
+  dplyr::select(nssi_engagement, suicide_attempt, lifetime_nssie, lifetime_number_attempts  ) %>%
+  mutate(
+    nssi_engagement = factor(nssi_engagement),
+    suicide_attempt = factor(suicide_attempt)) %>%
+  summary()
+
+```

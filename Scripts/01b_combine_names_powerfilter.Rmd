@@ -1,0 +1,51 @@
+---
+title: "01b_combine_names_powerfilter"
+author: "Christian Coffman"
+date: '2022-05-05'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+```
+
+
+# load names and powerspectra
+```{r}
+names <- read_csv("../IClabels.csv")
+highlow_long <- read_csv('../GIG/timecourses/freq_analysis.csv')
+all_powerspec <- read_csv('../GIG/timecourses/powersepctra.csv')
+```
+
+
+# figure for how many patients, a given IC was considered signal and not noise based on power spectrum
+```{r}
+highlow_long %>%
+  ggplot(aes(x = ratio, group= IC,fill = factor(IC))) +
+  geom_density(alpha = 0.05) +
+  theme(legend.position="none") + 
+  scale_x_log10(  ) + 
+  geom_vline(xintercept = 10)
+
+
+cutoff <- 3
+ICkeeprat <- highlow_long %>%
+  drop_na() %>%
+  mutate(Signal = ratio > cutoff, Noise = !Signal) %>%
+  dplyr::group_by(IC) %>%
+  dplyr::summarise(prop_sig = sum(Signal)/124, prop_noise = sum(Noise)/124)
+
+ICkeeprat %>%
+  ggplot(aes(x = prop_sig)) +
+  geom_density()
+
+manysignals <- ICkeeprat %>%
+  filter(prop_sig > 0.95)
+good_SMs <- names %>% 
+  filter(ICname != "Noise") %>%
+  inner_join(manysignals, by = "IC") %>%
+  write_csv("../selected_ICs.csv")
+
+```

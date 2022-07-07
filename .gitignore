@@ -1,0 +1,13 @@
+GIG/*
+FNC/*
+*.gz
+*.nii*
+*.csv
+*.txt
+!select_ICs.csv
+!selected_min_invis.csv
+!IClabels.csv
+*.text
+*.mat
+GIG-6.Rproj
+.Rhistory

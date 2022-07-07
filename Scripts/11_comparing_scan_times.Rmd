@@ -1,0 +1,55 @@
+---
+title: "11_comparing_scan_times"
+author: "Christian Coffman"
+date: "2/19/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+df <- read.csv("/home/christian/Research/Brain_stuff/BRIDGES_GIG_ICA/Dates_of_KSADS_and_Rs.csv")
+
+```
+
+```{r}
+difs <- df %>% 
+  # filter to only arm 1
+  filter(grepl("arm_1", redcap_event_name)) %>%
+  # filter(grepl("arm_1", redcap_event_name)) %>%
+  mutate(rs_date = ymd(resting_state_date), ksads_date = mdy(ksads_interview_date_t)) %>%
+  group_by(grid) %>%
+  summarise(rs_date = min(rs_date, na.rm=TRUE), ksads_date = min(ksads_date, na.rm=TRUE)) %>%
+  mutate(dif = ksads_date - rs_date + 206)  
+  
+
+difs %>%
+  filter(!is.nan(dif), dif > -10000000, dif < 10000000) %>%
+  mutate(greater_60 = dif > 60) %>%
+  count(greater_60) %>%
+  mutate(p = n/19)
+
+  
+```
+
+7310, 2020-10-27
+```{r}
+df %>% 
+  # filter(grepl("arm_1", redcap_event_name)) %>%
+  mutate(rs_date = ymd(resting_state_date), ksads_date = mdy(ksads_interview_date_t)) %>%
+  dplyr::select(rs_date, ksads_date, grid) %>%
+  mutate(rs_date= as.character(rs_date), ksads_date = as.character(ksads_date)) %>%
+  pivot_longer(-grid, names_to = "Type", values_to = "Date") %>%
+  mutate(Date = ymd(Date)) %>%
+  group_by(grid, Type) %>%
+  drop_na() %>%
+  summarise(Date = min(Date, na.rm= TRUE))%>%
+  pivot_wider(id_cols = grid, names_from = Type, values_from = Date) %>%
+  mutate(dif = rs_date- ksads_date - 106) %>% 
+  mutate(near = dif <= 90) %>%
+  ungroup() %>% 
+  summarize(table(near))
+
+
+```
