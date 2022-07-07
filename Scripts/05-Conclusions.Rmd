@@ -1,4 +1,0 @@
-# Conclusions   
-**Switching frequency model** - BSSI and age significant associated with decrease in switching frequency  
-**Dwell time Model** - ADHD increased global dwell time, BSSI increased state 4, Age increased nearly every state, NSSI decreased state 1, NSSI decreased state 3, Severe NSSI increased State 6
-
